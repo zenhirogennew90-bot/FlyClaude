@@ -603,7 +603,7 @@ addToggle(colVisual, "Hitbox Bulat", function(on)
 end)
 addToggle(colVisual, "Sembunyikan Hitbox", function(on) hbHide = on end)
 addToggle(colVisual, "Abaikan Tim", function(on) hbSkipTeam = on end)
-addSlider(colVisual, colVisual, "Besar Hitbox", 2, 40, hbSize, function(v) hbSize = v end, " st")
+addSlider(colVisual, colVisual, "Besar Hitbox", 2, 350, hbSize, function(v) hbSize = v end, " st")
 addSlider(colVisual, colVisual, "Transparansi Hitbox", 0, 100, math.floor(hbTrans * 100), function(v) hbTrans = v / 100 end, "%")
 
 RunService.Heartbeat:Connect(function()
