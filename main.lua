@@ -1,5 +1,5 @@
--- RGB Fly Hub v2 (LocalScript / loadstring compatible)
--- Fitur: Fly, Noclip, Airwalk, Anti Gelap (Fullbright), Slider Speed, Menu Scroll, Animasi Buka/Tutup
+-- RGB Hub v3 (LocalScript / loadstring compatible)
+-- Fitur: Fly, Noclip, Airwalk, Anti Gelap, Speed Up (WalkSpeed), 2 Slider, Menu Landscape + Scroll
 -- Key: F = fly | N = noclip | RightShift = buka/tutup menu | Space/Shift = naik/turun
 
 local Players = game:GetService("Players")
@@ -17,11 +17,11 @@ if old then old:Destroy() end
 ----------------------------------------------------------------
 -- State
 ----------------------------------------------------------------
-local speed = 60
-local MIN_SPEED, MAX_SPEED = 10, 300
+local flySpeed = 60
+local walkSpeed = 50
 local up, down = false, false
-local flying, noclip, airwalk = false, false, false
-local bv, bg, airPart, platY
+local flying, noclip, airwalk, speedUp = false, false, false, false
+local bv, bg, airPart, platY, origWalk
 
 ----------------------------------------------------------------
 -- GUI dasar
@@ -31,7 +31,7 @@ gui.Name = "RGBHub"
 gui.ResetOnSpawn = false
 gui.Parent = player.PlayerGui
 
-local rgbStrokes = {} -- { stroke, offset }
+local rgbStrokes = {}
 local function addStroke(parent, thickness, offset)
 	local s = Instance.new("UIStroke")
 	s.Thickness = thickness
@@ -48,12 +48,13 @@ local function corner(parent, r)
 	return c
 end
 
-local FULL = UDim2.fromOffset(250, 330)
-local CLOSED = UDim2.fromOffset(250, 0)
+-- Menu landscape (melebar ke samping)
+local FULL = UDim2.fromOffset(470, 250)
+local CLOSED = UDim2.fromOffset(470, 0)
 
 local main = Instance.new("Frame")
 main.Size = CLOSED
-main.Position = UDim2.new(0, 70, 0.25, 0)
+main.Position = UDim2.new(0, 70, 0.1, 0)
 main.BackgroundColor3 = Color3.fromRGB(14, 14, 20)
 main.BorderSizePixel = 0
 main.ClipsDescendants = true
@@ -62,7 +63,6 @@ main.Parent = gui
 corner(main, 14)
 addStroke(main, 2.5, 0)
 
--- Header
 local header = Instance.new("Frame")
 header.Size = UDim2.new(1, 0, 0, 40)
 header.BackgroundTransparency = 1
@@ -71,7 +71,7 @@ header.Parent = main
 
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, -44, 1, 0)
-title.Position = UDim2.fromOffset(12, 0)
+title.Position = UDim2.fromOffset(14, 0)
 title.BackgroundTransparency = 1
 title.Text = "✦ RGB HUB ✦"
 title.Font = Enum.Font.GothamBlack
@@ -83,7 +83,7 @@ local titleGrad = Instance.new("UIGradient", title)
 
 local closeBtn = Instance.new("TextButton")
 closeBtn.Size = UDim2.fromOffset(28, 28)
-closeBtn.Position = UDim2.new(1, -36, 0, 6)
+closeBtn.Position = UDim2.new(1, -38, 0, 6)
 closeBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 42)
 closeBtn.Text = "✕"
 closeBtn.Font = Enum.Font.GothamBold
@@ -92,31 +92,36 @@ closeBtn.TextColor3 = Color3.new(1, 1, 1)
 closeBtn.Parent = header
 corner(closeBtn, 8)
 
--- Scroll area
-local scroll = Instance.new("ScrollingFrame")
-scroll.Position = UDim2.fromOffset(8, 46)
-scroll.Size = UDim2.new(1, -16, 1, -54)
-scroll.BackgroundTransparency = 1
-scroll.BorderSizePixel = 0
-scroll.ScrollBarThickness = 4
-scroll.CanvasSize = UDim2.new()
-scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-scroll.ScrollingDirection = Enum.ScrollingDirection.Y
-scroll.Parent = main
+-- Dua kolom (kiri = fitur, kanan = kecepatan)
+local function makeColumn(px, poff)
+	local s = Instance.new("ScrollingFrame")
+	s.Position = UDim2.new(px, poff, 0, 44)
+	s.Size = UDim2.new(0.5, -14, 1, -52)
+	s.BackgroundTransparency = 1
+	s.BorderSizePixel = 0
+	s.ScrollBarThickness = 4
+	s.CanvasSize = UDim2.new()
+	s.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	s.ScrollingDirection = Enum.ScrollingDirection.Y
+	s.Parent = main
+	local l = Instance.new("UIListLayout", s)
+	l.Padding = UDim.new(0, 7)
+	l.SortOrder = Enum.SortOrder.LayoutOrder
+	local p = Instance.new("UIPadding", s)
+	p.PaddingTop = UDim.new(0, 3)
+	p.PaddingBottom = UDim.new(0, 6)
+	p.PaddingRight = UDim.new(0, 8)
+	p.PaddingLeft = UDim.new(0, 2)
+	return s
+end
 
-local list = Instance.new("UIListLayout", scroll)
-list.Padding = UDim.new(0, 8)
-list.SortOrder = Enum.SortOrder.LayoutOrder
-local pad = Instance.new("UIPadding", scroll)
-pad.PaddingTop = UDim.new(0, 4)
-pad.PaddingBottom = UDim.new(0, 8)
-pad.PaddingRight = UDim.new(0, 8)
-pad.PaddingLeft = UDim.new(0, 2)
+local leftCol = makeColumn(0, 12)
+local rightCol = makeColumn(0.5, 2)
+local scrolls = { leftCol, rightCol }
 
--- Tombol buka/tutup (melayang)
 local openBtn = Instance.new("TextButton")
 openBtn.Size = UDim2.fromOffset(46, 46)
-openBtn.Position = UDim2.new(0, 12, 0.25, 0)
+openBtn.Position = UDim2.new(0, 12, 0.1, 0)
 openBtn.BackgroundColor3 = Color3.fromRGB(14, 14, 20)
 openBtn.Text = "☰"
 openBtn.Font = Enum.Font.GothamBlack
@@ -132,17 +137,17 @@ addStroke(openBtn, 2.5, 0.15)
 local order = 0
 local function nextOrder() order += 1 return order end
 
-local function addToggle(text, callback)
+local function addToggle(parent, text, callback)
 	local obj = { on = false }
 
 	local b = Instance.new("TextButton")
-	b.Size = UDim2.new(1, 0, 0, 38)
+	b.Size = UDim2.new(1, 0, 0, 36)
 	b.BackgroundColor3 = Color3.fromRGB(26, 26, 36)
 	b.Text = ""
 	b.LayoutOrder = nextOrder()
-	b.Parent = scroll
+	b.Parent = parent
 	corner(b, 10)
-	addStroke(b, 1.5, nextOrder() * 0.07)
+	addStroke(b, 1.5, order * 0.07)
 
 	local lbl = Instance.new("TextLabel")
 	lbl.Size = UDim2.new(1, -70, 1, 0)
@@ -184,83 +189,80 @@ local function addToggle(text, callback)
 	return obj
 end
 
--- Slider speed
-local speedLabel, sliderFill, sliderKnob, sliderHit
-do
+local function addSlider(parent, scrollFrame, labelText, min, max, initial, onChange)
+	local value = initial
+
 	local row = Instance.new("Frame")
-	row.Size = UDim2.new(1, 0, 0, 56)
+	row.Size = UDim2.new(1, 0, 0, 54)
 	row.BackgroundColor3 = Color3.fromRGB(26, 26, 36)
 	row.LayoutOrder = nextOrder()
-	row.Parent = scroll
+	row.Parent = parent
 	corner(row, 10)
-	addStroke(row, 1.5, 0.5)
+	addStroke(row, 1.5, order * 0.07)
 
-	speedLabel = Instance.new("TextLabel")
-	speedLabel.Size = UDim2.new(1, -24, 0, 22)
-	speedLabel.Position = UDim2.fromOffset(12, 4)
-	speedLabel.BackgroundTransparency = 1
-	speedLabel.Font = Enum.Font.GothamBold
-	speedLabel.TextSize = 14
-	speedLabel.TextColor3 = Color3.new(1, 1, 1)
-	speedLabel.TextXAlignment = Enum.TextXAlignment.Left
-	speedLabel.Parent = row
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, -24, 0, 22)
+	label.Position = UDim2.fromOffset(12, 3)
+	label.BackgroundTransparency = 1
+	label.Font = Enum.Font.GothamBold
+	label.TextSize = 14
+	label.TextColor3 = Color3.new(1, 1, 1)
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = row
 
-	sliderHit = Instance.new("Frame")
-	sliderHit.Size = UDim2.new(1, -28, 0, 26)
-	sliderHit.Position = UDim2.fromOffset(14, 26)
-	sliderHit.BackgroundTransparency = 1
-	sliderHit.Active = true
-	sliderHit.Parent = row
+	local hit = Instance.new("Frame")
+	hit.Size = UDim2.new(1, -28, 0, 26)
+	hit.Position = UDim2.fromOffset(14, 24)
+	hit.BackgroundTransparency = 1
+	hit.Active = true
+	hit.Parent = row
 
 	local bar = Instance.new("Frame")
 	bar.Size = UDim2.new(1, 0, 0, 6)
 	bar.Position = UDim2.new(0, 0, 0.5, -3)
 	bar.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
 	bar.BorderSizePixel = 0
-	bar.Parent = sliderHit
+	bar.Parent = hit
 	corner(bar, 3)
 
-	sliderFill = Instance.new("Frame")
-	sliderFill.Size = UDim2.fromScale(0, 1)
-	sliderFill.BorderSizePixel = 0
-	sliderFill.BackgroundColor3 = Color3.new(1, 1, 1)
-	sliderFill.Parent = bar
-	corner(sliderFill, 3)
-	local fg = Instance.new("UIGradient", sliderFill)
+	local fill = Instance.new("Frame")
+	fill.BorderSizePixel = 0
+	fill.BackgroundColor3 = Color3.new(1, 1, 1)
+	fill.Parent = bar
+	corner(fill, 3)
+	local fg = Instance.new("UIGradient", fill)
 	fg.Color = ColorSequence.new({
 		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 60, 120)),
 		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 220, 60)),
 		ColorSequenceKeypoint.new(1, Color3.fromRGB(60, 200, 255)),
 	})
 
-	sliderKnob = Instance.new("Frame")
-	sliderKnob.Size = UDim2.fromOffset(16, 16)
-	sliderKnob.AnchorPoint = Vector2.new(0.5, 0.5)
-	sliderKnob.Position = UDim2.fromScale(0, 0.5)
-	sliderKnob.BackgroundColor3 = Color3.new(1, 1, 1)
-	sliderKnob.Parent = sliderHit
-	corner(sliderKnob, 8)
-end
+	local knob = Instance.new("Frame")
+	knob.Size = UDim2.fromOffset(16, 16)
+	knob.AnchorPoint = Vector2.new(0.5, 0.5)
+	knob.BackgroundColor3 = Color3.new(1, 1, 1)
+	knob.Parent = hit
+	corner(knob, 8)
 
-local function refreshSlider()
-	local rel = (speed - MIN_SPEED) / (MAX_SPEED - MIN_SPEED)
-	sliderFill.Size = UDim2.fromScale(rel, 1)
-	sliderKnob.Position = UDim2.fromScale(rel, 0.5)
-	speedLabel.Text = "Speed: " .. speed
-end
-refreshSlider()
+	local function refresh()
+		local rel = (value - min) / (max - min)
+		fill.Size = UDim2.fromScale(rel, 1)
+		knob.Position = UDim2.fromScale(rel, 0.5)
+		label.Text = labelText .. ": " .. value
+	end
+	refresh()
 
-do
 	local dragging = false
 	local function setFromX(x)
-		local rel = math.clamp((x - sliderHit.AbsolutePosition.X) / sliderHit.AbsoluteSize.X, 0, 1)
-		speed = math.floor(MIN_SPEED + rel * (MAX_SPEED - MIN_SPEED))
-		refreshSlider()
+		local rel = math.clamp((x - hit.AbsolutePosition.X) / hit.AbsoluteSize.X, 0, 1)
+		value = math.floor(min + rel * (max - min))
+		refresh()
+		onChange(value)
 	end
-	sliderHit.InputBegan:Connect(function(i)
+	hit.InputBegan:Connect(function(i)
 		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
 			dragging = true
-			scroll.ScrollingEnabled = false
+			scrollFrame.ScrollingEnabled = false
 			setFromX(i.Position.X)
 		end
 	end)
@@ -272,49 +274,22 @@ do
 	UIS.InputEnded:Connect(function(i)
 		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
 			dragging = false
-			scroll.ScrollingEnabled = true
+			scrollFrame.ScrollingEnabled = true
 		end
 	end)
 end
 
--- Tombol naik/turun (HP)
-do
-	local row = Instance.new("Frame")
-	row.Size = UDim2.new(1, 0, 0, 38)
-	row.BackgroundTransparency = 1
-	row.LayoutOrder = nextOrder()
-	row.Parent = scroll
-
-	local function mk(text, xScale, xOff, setter)
-		local b = Instance.new("TextButton")
-		b.Size = UDim2.new(0.5, -4, 1, 0)
-		b.Position = UDim2.new(xScale, xOff, 0, 0)
-		b.BackgroundColor3 = Color3.fromRGB(26, 26, 36)
-		b.Text = text
-		b.Font = Enum.Font.GothamBold
-		b.TextSize = 14
-		b.TextColor3 = Color3.new(1, 1, 1)
-		b.Parent = row
-		corner(b, 10)
-		addStroke(b, 1.5, xScale + 0.6)
-		b.MouseButton1Down:Connect(function() setter(true) end)
-		b.MouseButton1Up:Connect(function() setter(false) end)
-		b.MouseLeave:Connect(function() setter(false) end)
-	end
-	mk("▲ UP", 0, 0, function(v) up = v end)
-	mk("▼ DOWN", 0.5, 4, function(v) down = v end)
-end
-
-----------------------------------------------------------------
--- Fitur: Fly
-----------------------------------------------------------------
 local function getChar()
 	local c = player.Character
 	return c, c and c:FindFirstChild("HumanoidRootPart"), c and c:FindFirstChildOfClass("Humanoid")
 end
 
+----------------------------------------------------------------
+-- KOLOM KIRI: Fitur
+----------------------------------------------------------------
+-- Fly
 local flyToggle
-flyToggle = addToggle("Fly", function(on)
+flyToggle = addToggle(leftCol, "Fly", function(on)
 	local _, root, hum = getChar()
 	if on then
 		if not (root and hum) then flying = false return end
@@ -337,10 +312,8 @@ flyToggle = addToggle("Fly", function(on)
 	end
 end)
 
-----------------------------------------------------------------
--- Fitur: Noclip
-----------------------------------------------------------------
-local noclipToggle = addToggle("Noclip", function(on) noclip = on end)
+-- Noclip
+local noclipToggle = addToggle(leftCol, "Noclip", function(on) noclip = on end)
 
 RunService.Stepped:Connect(function()
 	if not noclip then return end
@@ -353,14 +326,13 @@ RunService.Stepped:Connect(function()
 	end
 end)
 
-----------------------------------------------------------------
--- Fitur: Airwalk
-----------------------------------------------------------------
+-- Airwalk
 local function destroyAir()
 	if airPart then airPart:Destroy() airPart = nil end
 end
 
-addToggle("Airwalk", function(on)
+local airToggle
+airToggle = addToggle(leftCol, "Airwalk", function(on)
 	airwalk = on
 	if on then
 		local _, root, hum = getChar()
@@ -383,23 +355,20 @@ addToggle("Airwalk", function(on)
 end)
 
 RunService.Heartbeat:Connect(function(dt)
-	if not airwalk then return end
+	if not (airwalk and airPart) then return end
 	local _, root = getChar()
 	if not root then return end
-	if not airPart then return end
 	if up then platY += 25 * dt end
 	if down then platY -= 25 * dt end
 	airPart.CFrame = CFrame.new(root.Position.X, platY, root.Position.Z)
 	airPart.Color = Color3.fromHSV((tick() * 0.25) % 1, 1, 1)
 end)
 
-----------------------------------------------------------------
--- Fitur: Anti Gelap (Fullbright)
-----------------------------------------------------------------
-local saved
-addToggle("Anti Gelap", function(on)
+-- Anti Gelap
+local savedLight
+addToggle(leftCol, "Anti Gelap", function(on)
 	if on then
-		saved = {
+		savedLight = {
 			Brightness = Lighting.Brightness,
 			ClockTime = Lighting.ClockTime,
 			FogEnd = Lighting.FogEnd,
@@ -413,10 +382,60 @@ addToggle("Anti Gelap", function(on)
 		Lighting.GlobalShadows = false
 		Lighting.Ambient = Color3.fromRGB(178, 178, 178)
 		Lighting.OutdoorAmbient = Color3.fromRGB(178, 178, 178)
-	elseif saved then
-		for k, v in pairs(saved) do Lighting[k] = v end
+	elseif savedLight then
+		for k, v in pairs(savedLight) do Lighting[k] = v end
 	end
 end)
+
+-- Speed Up (WalkSpeed)
+addToggle(leftCol, "Speed Up", function(on)
+	speedUp = on
+	local _, _, hum = getChar()
+	if on then
+		if hum then origWalk = hum.WalkSpeed end
+	else
+		if hum and origWalk then hum.WalkSpeed = origWalk end
+	end
+end)
+
+RunService.Heartbeat:Connect(function()
+	if not speedUp then return end
+	local _, _, hum = getChar()
+	if hum then hum.WalkSpeed = walkSpeed end
+end)
+
+----------------------------------------------------------------
+-- KOLOM KANAN: Kecepatan
+----------------------------------------------------------------
+addSlider(rightCol, rightCol, "Fly Speed", 10, 300, flySpeed, function(v) flySpeed = v end)
+addSlider(rightCol, rightCol, "Walk Speed", 16, 200, walkSpeed, function(v) walkSpeed = v end)
+
+do
+	local row = Instance.new("Frame")
+	row.Size = UDim2.new(1, 0, 0, 36)
+	row.BackgroundTransparency = 1
+	row.LayoutOrder = nextOrder()
+	row.Parent = rightCol
+
+	local function mk(text, xScale, xOff, setter)
+		local b = Instance.new("TextButton")
+		b.Size = UDim2.new(0.5, -4, 1, 0)
+		b.Position = UDim2.new(xScale, xOff, 0, 0)
+		b.BackgroundColor3 = Color3.fromRGB(26, 26, 36)
+		b.Text = text
+		b.Font = Enum.Font.GothamBold
+		b.TextSize = 14
+		b.TextColor3 = Color3.new(1, 1, 1)
+		b.Parent = row
+		corner(b, 10)
+		addStroke(b, 1.5, xScale + 0.6)
+		b.MouseButton1Down:Connect(function() setter(true) end)
+		b.MouseButton1Up:Connect(function() setter(false) end)
+		b.MouseLeave:Connect(function() setter(false) end)
+	end
+	mk("▲ UP", 0, 0, function(v) up = v end)
+	mk("▼ DOWN", 0.5, 4, function(v) down = v end)
+end
 
 ----------------------------------------------------------------
 -- Gerakan fly
@@ -437,7 +456,7 @@ RunService.RenderStepped:Connect(function()
 	if up then dir += Vector3.yAxis end
 	if down then dir -= Vector3.yAxis end
 
-	bv.Velocity = dir * speed
+	bv.Velocity = dir * flySpeed
 	bg.CFrame = cf
 end)
 
@@ -517,16 +536,19 @@ RunService.RenderStepped:Connect(function()
 		ColorSequenceKeypoint.new(1, Color3.fromHSV((h + 0.66) % 1, 1, 1)),
 	})
 	titleGrad.Rotation = (t * 90) % 360
-	scroll.ScrollBarImageColor3 = Color3.fromHSV(h, 1, 1)
+	for _, s in ipairs(scrolls) do
+		s.ScrollBarImageColor3 = Color3.fromHSV(h, 1, 1)
+	end
 end)
 
 ----------------------------------------------------------------
--- Respawn
+-- Respawn: reset fly & airwalk
 ----------------------------------------------------------------
 player.CharacterAdded:Connect(function()
 	bv, bg = nil, nil
 	flying = false
 	if flyToggle.on then flyToggle.on = false flyToggle.set(false) end
+	if airToggle.on then airToggle.set(false) end
 end)
 
 setOpen(true)
