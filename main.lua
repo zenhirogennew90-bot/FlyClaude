@@ -671,3 +671,116 @@ end
 -- Gerakan fly
 ----------------------------------------------------------------
 RunService.RenderStepped:Connect(function()
+	if not flying then return end
+	local _, root, hum = getChar()
+	if not (root and hum and bv and bg) then return end
+
+	local cf = camera.CFrame
+	local md = hum.MoveDirection
+	local fl = Vector3.new(cf.LookVector.X, 0, cf.LookVector.Z)
+	local fr = Vector3.new(cf.RightVector.X, 0, cf.RightVector.Z)
+	fl = fl.Magnitude > 0 and fl.Unit or Vector3.zero
+	fr = fr.Magnitude > 0 and fr.Unit or Vector3.zero
+
+	local dir = cf.LookVector * md:Dot(fl) + cf.RightVector * md:Dot(fr)
+	if up then dir += Vector3.yAxis end
+	if down then dir -= Vector3.yAxis end
+
+	bv.Velocity = dir * flySpeed
+	bg.CFrame = cf
+end)
+
+----------------------------------------------------------------
+-- Animasi buka/tutup + drag
+----------------------------------------------------------------
+local isOpen = false
+local function setOpen(v)
+	isOpen = v
+	if v then
+		main.Visible = true
+		main.Size = CLOSED
+		TweenService:Create(main, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = FULL }):Play()
+		TweenService:Create(openBtn, TweenInfo.new(0.3), { Rotation = 90 }):Play()
+	else
+		local t = TweenService:Create(main, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Size = CLOSED })
+		t.Completed:Connect(function()
+			if not isOpen then main.Visible = false end
+		end)
+		t:Play()
+		TweenService:Create(openBtn, TweenInfo.new(0.3), { Rotation = 0 }):Play()
+	end
+end
+
+openBtn.MouseButton1Click:Connect(function() setOpen(not isOpen) end)
+closeBtn.MouseButton1Click:Connect(function() setOpen(false) end)
+
+do
+	local dragging, dragStart, startPos
+	header.InputBegan:Connect(function(i)
+		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+			dragging, dragStart, startPos = true, i.Position, main.Position
+		end
+	end)
+	UIS.InputChanged:Connect(function(i)
+		if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+			local d = i.Position - dragStart
+			main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
+		end
+	end)
+	UIS.InputEnded:Connect(function(i)
+		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+			dragging = false
+		end
+	end)
+end
+
+----------------------------------------------------------------
+-- Keybind
+----------------------------------------------------------------
+UIS.InputBegan:Connect(function(i, gp)
+	if gp then return end
+	local k = i.KeyCode
+	if k == Enum.KeyCode.F then flyToggle.set(not flyToggle.on)
+	elseif k == Enum.KeyCode.N then noclipToggle.set(not noclipToggle.on)
+	elseif k == Enum.KeyCode.RightShift then setOpen(not isOpen)
+	elseif k == Enum.KeyCode.Space then up = true
+	elseif k == Enum.KeyCode.LeftShift then down = true end
+end)
+UIS.InputEnded:Connect(function(i)
+	if i.KeyCode == Enum.KeyCode.Space then up = false
+	elseif i.KeyCode == Enum.KeyCode.LeftShift then down = false end
+end)
+
+----------------------------------------------------------------
+-- Animasi RGB
+----------------------------------------------------------------
+RunService.RenderStepped:Connect(function()
+	local t = tick()
+	local h = (t * 0.25) % 1
+	for _, e in ipairs(rgbStrokes) do
+		if e[1].Parent then
+			e[1].Color = Color3.fromHSV((h + e[2]) % 1, 1, 1)
+		end
+	end
+	titleGrad.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromHSV(h, 1, 1)),
+		ColorSequenceKeypoint.new(0.5, Color3.fromHSV((h + 0.33) % 1, 1, 1)),
+		ColorSequenceKeypoint.new(1, Color3.fromHSV((h + 0.66) % 1, 1, 1)),
+	})
+	titleGrad.Rotation = (t * 90) % 360
+	for _, s in ipairs(scrolls) do
+		s.ScrollBarImageColor3 = Color3.fromHSV(h, 1, 1)
+	end
+end)
+
+----------------------------------------------------------------
+-- Respawn
+----------------------------------------------------------------
+player.CharacterAdded:Connect(function()
+	bv, bg = nil, nil
+	flying = false
+	if flyToggle.on then flyToggle.on = false flyToggle.set(false) end
+	if airToggle.on then airToggle.set(false) end
+end)
+
+setOpen(true)
