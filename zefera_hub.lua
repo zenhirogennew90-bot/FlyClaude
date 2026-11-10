@@ -3,6 +3,10 @@
 --        Slider (fly/walk/hitbox/transparansi), Transparansi Menu, Menu 3 kolom landscape
 -- Key: F = fly | N = noclip | RightShift = buka/tutup menu | Space/Shift = naik/turun
 
+local __ok, __err = xpcall(function()
+
+if not game:IsLoaded() then game.Loaded:Wait() end
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -12,8 +16,16 @@ local Lighting = game:GetService("Lighting")
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
-local old = player:WaitForChild("PlayerGui"):FindFirstChild("ZeFeraHub")
-if old then old:Destroy() end
+local playerGui = player:WaitForChild("PlayerGui")
+local guiParent = playerGui
+do
+	local ok, h = pcall(function() return (not (getgenv and getgenv().ZF_PLAYERGUI)) and gethui and gethui() end)
+	if ok and typeof(h) == "Instance" then guiParent = h end
+end
+for _, p in ipairs({ playerGui, guiParent }) do
+	local old = p:FindFirstChild("ZeFeraHub")
+	if old then old:Destroy() end
+end
 
 ----------------------------------------------------------------
 -- State
@@ -32,7 +44,8 @@ local bv, bg, airPart, platY, origWalk
 local gui = Instance.new("ScreenGui")
 gui.Name = "ZeFeraHub"
 gui.ResetOnSpawn = false
-gui.Parent = player.PlayerGui
+gui.DisplayOrder = 999
+gui.Parent = guiParent
 
 local rgbStrokes = {}
 local function addStroke(parent, thickness, offset)
@@ -59,8 +72,11 @@ local function registerPanel(f)
 	f.BackgroundTransparency = menuTrans
 end
 
-local FULL = UDim2.fromOffset(620, 250)
-local CLOSED = UDim2.fromOffset(620, 0)
+local vp = camera.ViewportSize
+local MENU_W = math.clamp(vp.X - 90, 380, 620)
+local MENU_H = math.clamp(vp.Y - 40, 200, 250)
+local FULL = UDim2.fromOffset(MENU_W, MENU_H)
+local CLOSED = UDim2.fromOffset(MENU_W, 0)
 
 local main = Instance.new("Frame")
 main.Size = CLOSED
@@ -784,3 +800,16 @@ player.CharacterAdded:Connect(function()
 end)
 
 setOpen(true)
+
+end, function(e) return debug.traceback(tostring(e), 2) end)
+
+if not __ok then
+	warn("[ZeFera Hub] ERROR:\n" .. tostring(__err))
+	pcall(function()
+		game:GetService("StarterGui"):SetCore("SendNotification", {
+			Title = "ZeFera Hub error",
+			Text = tostring(__err):sub(1, 150),
+			Duration = 10,
+		})
+	end)
+end
