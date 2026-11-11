@@ -1,6 +1,7 @@
 -- ZeFera Hub v4 (LocalScript / loadstring compatible)
--- Fitur: Fly, Noclip, Airwalk, NoClip+Airwalk, Speed Up (bisa diketik), Anti Gelap, ESP, Hitbox bulat + Zona,
---        TP Sayang Nyawa (pintasan bisa dikunci), Optimasi Grafik, Transparansi/Lebar Menu, Config manual (CFG), Unload (DEL)
+-- Fitur: Fly, Noclip, Airwalk, NoClip+Airwalk, Speed Up, Jalan Dinding, Bunuh Diri, TP (acak / bawah kaki),
+--        ESP + Target (maks 3), Hitbox + Zona, Sembunyikan Avatar + Skeleton ESP, Optimasi Aman/Ekstrem,
+--        Popup pilihan sendiri, Suara klik, Config manual (CFG), Unload (DEL)
 -- Key: F = fly | N = noclip | RightShift = buka/tutup menu | Space/Shift = naik/turun
 
 local __ok, __err = xpcall(function()
@@ -58,6 +59,11 @@ local espOn = false
 local hbOn, hbHide, hbSkipTeam = false, false, false
 local hbSize, hbTrans = 12, 0.7
 local hbRgb, tintOn, tintStrength = false, true, 45
+local wallOn, wallN, wallFacing, wallSpeed = false, Vector3.yAxis, Vector3.zAxis, 24
+local tpDepth = 8
+local targets, targetEspOn = {}, false
+local avatarHideOn, skelOn = false, false
+local clickOn, clickVol = true, 0.6
 local isOpen = false
 local unloadHub, toggleCfg
 local bv, bg, airPart, platY, origWalk
@@ -116,6 +122,51 @@ local menuTrans = 0
 local function registerPanel(f)
 	table.insert(panels, f)
 	f.BackgroundTransparency = menuTrans
+end
+
+local function toast(text)
+	local t = Instance.new("TextLabel")
+	t.Size = UDim2.fromOffset(250, 30)
+	t.Position = UDim2.new(0.5, -125, 0, 12)
+	t.BackgroundColor3 = Color3.fromRGB(14, 14, 20)
+	t.BackgroundTransparency = 0.2
+	t.Text = text
+	t.Font = Enum.Font.GothamBold
+	t.TextSize = 13
+	t.TextColor3 = Color3.new(1, 1, 1)
+	t.Parent = gui
+	corner(t, 10)
+	local st = Instance.new("UIStroke", t)
+	st.Thickness = 1
+	st.Transparency = 0.5
+	task.delay(1.8, function()
+		local tw = TweenService:Create(t, TweenInfo.new(0.4), { BackgroundTransparency = 1, TextTransparency = 1 })
+		tw:Play()
+		tw.Completed:Wait()
+		t:Destroy()
+	end)
+end
+
+-- Suara klik lucu: 3 efek bawaan Roblox dengan nada acak (pop / boing / cicit)
+local SoundService = game:GetService("SoundService")
+local clickSounds = {}
+for _, id in ipairs({
+	"rbxasset://sounds/clickfast.wav",
+	"rbxasset://sounds/button.wav",
+	"rbxasset://sounds/electronicpingshort.wav",
+}) do
+	local snd = Instance.new("Sound")
+	snd.SoundId = id
+	snd.Volume = clickVol
+	snd.Parent = SoundService
+	table.insert(clickSounds, snd)
+end
+local function playClick()
+	if not clickOn then return end
+	local snd = clickSounds[math.random(1, #clickSounds)]
+	snd.Volume = clickVol
+	snd.PlaybackSpeed = 0.7 + math.random() * 1.6
+	snd:Play()
 end
 
 local vp = camera.ViewportSize
@@ -210,10 +261,15 @@ cfgBtn.MouseButton1Click:Connect(function() if toggleCfg then toggleCfg() end en
 
 -- Navigasi tab (kategori) + halaman, tiap halaman punya 2 kolom
 local TAB_Y = 42
-local tabBar = Instance.new("Frame")
+local tabBar = Instance.new("ScrollingFrame")
 tabBar.Position = UDim2.fromOffset(10, TAB_Y)
-tabBar.Size = UDim2.new(1, -20, 0, 28)
+tabBar.Size = UDim2.new(1, -20, 0, 30)
 tabBar.BackgroundTransparency = 1
+tabBar.BorderSizePixel = 0
+tabBar.ScrollBarThickness = 0
+tabBar.CanvasSize = UDim2.new()
+tabBar.AutomaticCanvasSize = Enum.AutomaticSize.X
+tabBar.ScrollingDirection = Enum.ScrollingDirection.X
 tabBar.Parent = main
 local tabLayout = Instance.new("UIListLayout", tabBar)
 tabLayout.FillDirection = Enum.FillDirection.Horizontal
@@ -271,7 +327,7 @@ end
 local function addTab(label)
 	local idx = #tabs + 1
 	local btn = Instance.new("TextButton")
-	btn.Size = UDim2.new(0.25, -5, 1, 0)
+	btn.Size = UDim2.fromOffset(94, 26)
 	btn.LayoutOrder = idx
 	btn.BackgroundColor3 = Color3.fromRGB(26, 26, 36)
 	btn.Text = label
@@ -296,8 +352,12 @@ local function addTab(label)
 end
 
 local gA, gB = addTab("GERAK")
+local tA, tB = addTab("TELEPORT")
 local vA, vB = addTab("VISUAL")
+local rA, rB = addTab("TARGET")
+local aA, aB = addTab("AVATAR")
 local oA, oB = addTab("OPTIMASI")
+local pA, pB = addTab("POPUP")
 local sA, sB = addTab("PENGATURAN")
 showTab(1)
 
@@ -373,6 +433,7 @@ local function addToggle(parent, text, callback)
 	lbl.TextSize = 13
 	lbl.TextColor3 = Color3.new(1, 1, 1)
 	lbl.TextXAlignment = Enum.TextXAlignment.Left
+	lbl.TextTruncate = Enum.TextTruncate.AtEnd
 	lbl.Parent = b
 
 	local pill = Instance.new("Frame")
@@ -663,6 +724,134 @@ RunService.Heartbeat:Connect(function()
 	if hum then hum.WalkSpeed = walkSpeed end
 end)
 
+-- Jalan di dinding (eksperimental): berjalan menempel di permukaan apa pun
+addHeader(gB, "MOVEMENT+")
+local wallRay = RaycastParams.new()
+wallRay.FilterType = Enum.RaycastFilterType.Exclude
+wallRay.RespectCanCollide = true
+
+local wallToggle
+wallToggle = addToggle(gB, "Jalan Dinding", function(on)
+	wallOn = on
+	local _, root, hum = getChar()
+	if on then
+		if not (root and hum) then wallOn = false return end
+		if flyToggle.on then flyToggle.set(false) end
+		wallN = Vector3.yAxis
+		local lv = root.CFrame.LookVector
+		local f = Vector3.new(lv.X, 0, lv.Z)
+		wallFacing = f.Magnitude > 0.01 and f.Unit or Vector3.zAxis
+		hum.PlatformStand = true
+	else
+		if hum then hum.PlatformStand = false end
+		if root then
+			local f = Vector3.new(wallFacing.X, 0, wallFacing.Z)
+			if f.Magnitude < 0.01 then f = Vector3.zAxis end
+			local p = root.Position + Vector3.new(0, 1.5, 0)
+			root.CFrame = CFrame.lookAt(p, p + f)
+			root.AssemblyLinearVelocity = Vector3.zero
+		end
+	end
+end)
+
+RunService.RenderStepped:Connect(function(dt)
+	if not wallOn then return end
+	local char, root, hum = getChar()
+	if not (root and hum) then return end
+	if not hum.PlatformStand then hum.PlatformStand = true end
+
+	local ex = { char }
+	if airPart then table.insert(ex, airPart) end
+	wallRay.FilterDescendantsInstances = ex
+
+	local feet = (hum.RigType == Enum.HumanoidRigType.R15) and (hum.HipHeight + root.Size.Y / 2) or 3
+	local n = wallN
+	local pos = root.Position
+
+	-- arah input relatif kamera
+	local cf = camera.CFrame
+	local md = hum.MoveDirection
+	local fl = Vector3.new(cf.LookVector.X, 0, cf.LookVector.Z)
+	local fr = Vector3.new(cf.RightVector.X, 0, cf.RightVector.Z)
+	fl = fl.Magnitude > 0 and fl.Unit or Vector3.zero
+	fr = fr.Magnitude > 0 and fr.Unit or Vector3.zero
+	local fwdIn, rightIn = md:Dot(fl), md:Dot(fr)
+
+	local look = cf.LookVector
+	local t1 = look - n * look:Dot(n)
+	if t1.Magnitude < 0.3 then
+		local u = cf.UpVector
+		t1 = u - n * u:Dot(n)
+	end
+	if t1.Magnitude < 0.01 then t1 = wallFacing - n * wallFacing:Dot(n) end
+	if t1.Magnitude < 0.01 then t1 = Vector3.xAxis - n * Vector3.xAxis:Dot(n) end
+	t1 = t1.Unit
+	local t2 = t1:Cross(n)
+	local dir = t1 * fwdIn + t2 * rightIn
+	local moving = dir.Magnitude > 0.05
+
+	if moving then
+		dir = dir.Unit
+		local step = wallSpeed * dt
+		local ahead = workspace:Raycast(pos, dir * (step + 2.2), wallRay)
+		if ahead and math.abs(ahead.Normal:Dot(n)) < 0.6 then
+			-- sudut cekung: pindah ke dinding / lantai / langit-langit di depan
+			n = ahead.Normal
+			pos = ahead.Position + n * feet
+		else
+			pos = pos + dir * step
+			local down = workspace:Raycast(pos, -n * (feet + 2.5), wallRay)
+			if down then
+				local nn = n:Lerp(down.Normal, 0.5)
+				n = nn.Magnitude > 0.01 and nn.Unit or down.Normal
+				pos = down.Position + n * feet
+			else
+				-- sudut cembung: lewat tepi, cari permukaan di sisi bawah
+				local wrap = workspace:Raycast(pos - n * (feet + 1.2), -dir * (step + 3), wallRay)
+				if wrap then
+					n = wrap.Normal
+					pos = wrap.Position + n * feet
+				else
+					pos = root.Position
+				end
+			end
+		end
+		local f = dir - n * dir:Dot(n)
+		if f.Magnitude > 0.01 then wallFacing = f.Unit end
+	else
+		local down = workspace:Raycast(pos, -n * (feet + 2.5), wallRay)
+		if down then
+			n = down.Normal
+			pos = down.Position + n * feet
+		end
+	end
+
+	local f = wallFacing - n * wallFacing:Dot(n)
+	if f.Magnitude < 0.01 then f = t1 - n * t1:Dot(n) end
+	f = f.Unit
+	wallN = n
+	root.CFrame = CFrame.fromMatrix(pos, f:Cross(n), n, -f)
+	root.AssemblyLinearVelocity = Vector3.zero
+	root.AssemblyAngularVelocity = Vector3.zero
+end)
+
+addSlider(gB, gB, "Kecepatan Dinding", 8, 80, wallSpeed, function(v) wallSpeed = v end, " st/s")
+
+local suicideArmed = false
+local function doSuicide()
+	if not suicideArmed then
+		suicideArmed = true
+		toast("Tekan sekali lagi (2 dtk) untuk konfirmasi")
+		task.delay(2, function() suicideArmed = false end)
+		return
+	end
+	suicideArmed = false
+	local char, _, hum = getChar()
+	if hum then pcall(function() hum.Health = 0 end) end
+	if char then pcall(function() char:BreakJoints() end) end
+end
+addButton(gB, "Bunuh Diri", doSuicide)
+
 local savedLight
 addHeader(oA, "PENCAHAYAAN")
 local darkToggle = addToggle(oA, "Anti Gelap", function(on)
@@ -691,29 +880,6 @@ addNote(oA, "Terangkan area gelap (fullbright). Pengaturan cahaya asli dikembali
 ----------------------------------------------------------------
 -- TP Sayang Nyawa (teleport ke pemain acak) + tombol pintas
 ----------------------------------------------------------------
-local function toast(text)
-	local t = Instance.new("TextLabel")
-	t.Size = UDim2.fromOffset(230, 30)
-	t.Position = UDim2.new(0.5, -115, 0, 12)
-	t.BackgroundColor3 = Color3.fromRGB(14, 14, 20)
-	t.BackgroundTransparency = 0.2
-	t.Text = text
-	t.Font = Enum.Font.GothamBold
-	t.TextSize = 13
-	t.TextColor3 = Color3.new(1, 1, 1)
-	t.Parent = gui
-	corner(t, 10)
-	local st = Instance.new("UIStroke", t)
-	st.Thickness = 1
-	st.Transparency = 0.5
-	task.delay(1.6, function()
-		local tw = TweenService:Create(t, TweenInfo.new(0.4), { BackgroundTransparency = 1, TextTransparency = 1 })
-		tw:Play()
-		tw.Completed:Wait()
-		t:Destroy()
-	end)
-end
-
 local function tpRandom()
 	local _, root = getChar()
 	if not root then return end
@@ -737,8 +903,40 @@ local function tpRandom()
 	toast("TP ke " .. plr.DisplayName)
 end
 
-addHeader(gB, "TELEPORT")
-addButton(gB, "TP Sayang Nyawa", tpRandom)
+local function livePlayers(list)
+	local out = {}
+	for _, plr in ipairs(list) do
+		if plr ~= player then
+			local c = plr.Character
+			local r = c and c:FindFirstChild("HumanoidRootPart")
+			local h = c and c:FindFirstChildOfClass("Humanoid")
+			if r and h and h.Health > 0 then table.insert(out, plr) end
+		end
+	end
+	return out
+end
+
+-- TP tepat di bawah kaki pemain (target terpilih, kalau kosong acak), jarak vertikal diatur slider
+local function tpUnder()
+	local _, root = getChar()
+	if not root then return end
+	local pool = livePlayers(#targets > 0 and targets or Players:GetPlayers())
+	if #pool == 0 then
+		toast("Target tidak ditemukan")
+		return
+	end
+	local plr = pool[math.random(1, #pool)]
+	local tr = plr.Character.HumanoidRootPart
+	root.AssemblyLinearVelocity = Vector3.zero
+	root.CFrame = CFrame.new(tr.Position.X, tr.Position.Y - 3 - tpDepth, tr.Position.Z)
+	toast("TP bawah kaki " .. plr.DisplayName)
+end
+
+addHeader(tA, "TP PEMAIN")
+addButton(tA, "TP Sayang Nyawa", tpRandom)
+addButton(tA, "TP Bawah Kaki", tpUnder)
+addSlider(tA, tA, "Jarak Vertikal", 1, 100, tpDepth, function(v) tpDepth = v end, " st", 500)
+addNote(tA, "TP Bawah Kaki memakai target dari tab TARGET (kalau kosong: acak). Aktifkan NoClip+Airwalk dulu supaya tidak jatuh ke bawah.")
 
 -- Tombol pintas melayang (bisa di-drag, bisa dikunci)
 local tpLocked = false
@@ -782,12 +980,14 @@ do
 	end)
 end
 
-local tpToggle = addToggle(gB, "Pintasan TP", function(on) tpBtn.Visible = on end)
+addHeader(tB, "POP-UP TP")
+local tpToggle = addToggle(tB, "Pintasan TP", function(on) tpBtn.Visible = on end)
 tpToggle.set(true)
-addToggle(gB, "Kunci TP", function(on)
+addToggle(tB, "Kunci Pop-up", function(on)
 	tpLocked = on
-	toast(on and "Pintasan TP dikunci" or "Pintasan TP dibuka")
+	toast(on and "Semua pop-up dikunci" or "Pop-up dibuka")
 end)
+addNote(tB, "Kunci Pop-up berlaku untuk tombol TP dan semua tombol pop-up lain.")
 
 ----------------------------------------------------------------
 -- ESP (nama + jarak)
@@ -856,24 +1056,37 @@ local function buildEsp(plr)
 	espObjs[plr] = { gui = bb, hl = hl, label = label, ps = ps }
 end
 
-local function clearAllEsp()
-	for plr in pairs(espObjs) do clearEsp(plr) end
+local function isTarget(plr)
+	for _, t in ipairs(targets) do
+		if t == plr then return true end
+	end
+	return false
 end
 
-local function rebuildAllEsp()
-	for _, plr in ipairs(Players:GetPlayers()) do buildEsp(plr) end
+local function espWanted(plr)
+	return plr ~= player and (espOn or (targetEspOn and isTarget(plr)))
+end
+
+local function refreshEsp()
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if espWanted(plr) then
+			if not espObjs[plr] then buildEsp(plr) end
+		else
+			clearEsp(plr)
+		end
+	end
 end
 
 addHeader(vA, "ESP & HITBOX")
 local espToggle = addToggle(vA, "ESP Nama + Jarak", function(on)
 	espOn = on
-	if on then rebuildAllEsp() else clearAllEsp() end
+	refreshEsp()
 end)
 
 local function hookPlayer(plr)
 	if plr == player then return end
 	track(plr.CharacterAdded:Connect(function()
-		if espOn then
+		if espWanted(plr) then
 			task.wait(0.3)
 			buildEsp(plr)
 		end
@@ -886,7 +1099,7 @@ track(Players.PlayerRemoving:Connect(clearEsp))
 do
 	local acc = 0
 	RunService.Heartbeat:Connect(function(dt)
-		if not espOn then return end
+		if not (espOn or targetEspOn) then return end
 		acc += dt
 		if acc < 0.1 then return end
 		acc = 0
@@ -895,20 +1108,310 @@ do
 		for plr, e in pairs(espObjs) do
 			local char = plr.Character
 			local root = char and char:FindFirstChild("HumanoidRootPart")
-			if not root or not e.gui.Adornee or not e.gui.Adornee.Parent then
+			if not espWanted(plr) then
 				clearEsp(plr)
-				if char then task.defer(buildEsp, plr) end
+			elseif not root or not e.gui.Adornee or not e.gui.Adornee.Parent then
+				clearEsp(plr)
+				if char and espWanted(plr) then task.defer(buildEsp, plr) end
 			elseif myRoot then
 				local d = math.floor((root.Position - myRoot.Position).Magnitude + 0.5)
+				local nameCol = isTarget(plr) and "rgb(255,215,90)" or "rgb(255,255,255)"
 				e.label.Text = string.format(
-					'<b>%s</b>\n<font size="11" color="rgb(185,185,205)">%d m</font>',
-					escapeRich(plr.DisplayName), d
+					'<font color="%s"><b>%s</b></font>\n<font size="11" color="rgb(185,185,205)">%d m</font>',
+					nameCol, escapeRich(plr.DisplayName), d
 				)
 				e.hl.OutlineColor = e.ps.Color
 			end
 		end
 	end)
 end
+
+----------------------------------------------------------------
+-- TARGET: cari & pilih maks 3 player untuk ESP target
+----------------------------------------------------------------
+local MAX_TARGETS = 3
+addHeader(rA, "CARI PLAYER")
+
+local searchBox = Instance.new("TextBox")
+searchBox.Size = UDim2.new(1, 0, 0, 34)
+searchBox.BackgroundColor3 = Color3.fromRGB(26, 26, 36)
+searchBox.Font = Enum.Font.GothamBold
+searchBox.TextSize = 13
+searchBox.TextColor3 = Color3.new(1, 1, 1)
+searchBox.PlaceholderText = "Cari username / display name"
+searchBox.PlaceholderColor3 = Color3.fromRGB(130, 130, 150)
+searchBox.Text = ""
+searchBox.ClearTextOnFocus = false
+searchBox.LayoutOrder = nextOrder()
+searchBox.Parent = rA
+corner(searchBox, 10)
+addStroke(searchBox, 1.5, 0.2)
+registerPanel(searchBox)
+
+local function makeListFrame(parent)
+	local f = Instance.new("Frame")
+	f.Size = UDim2.new(1, 0, 0, 0)
+	f.AutomaticSize = Enum.AutomaticSize.Y
+	f.BackgroundTransparency = 1
+	f.LayoutOrder = nextOrder()
+	f.Parent = parent
+	local l = Instance.new("UIListLayout", f)
+	l.Padding = UDim.new(0, 5)
+	l.SortOrder = Enum.SortOrder.LayoutOrder
+	return f
+end
+
+local function listButton(parent, text, color, cb)
+	local b = Instance.new("TextButton")
+	b.Size = UDim2.new(1, 0, 0, 28)
+	b.BackgroundColor3 = color
+	b.Text = text
+	b.Font = Enum.Font.GothamMedium
+	b.TextSize = 12
+	b.TextColor3 = Color3.new(1, 1, 1)
+	b.TextTruncate = Enum.TextTruncate.AtEnd
+	b.Parent = parent
+	corner(b, 8)
+	b.MouseButton1Click:Connect(cb)
+	return b
+end
+
+local function clearList(f)
+	for _, c in ipairs(f:GetChildren()) do
+		if c:IsA("GuiObject") then c:Destroy() end
+	end
+end
+
+local function listLabel(parent, text)
+	local l = Instance.new("TextLabel")
+	l.Size = UDim2.new(1, 0, 0, 22)
+	l.BackgroundTransparency = 1
+	l.Text = text
+	l.Font = Enum.Font.GothamMedium
+	l.TextSize = 11
+	l.TextColor3 = Color3.fromRGB(150, 150, 170)
+	l.TextXAlignment = Enum.TextXAlignment.Left
+	l.Parent = parent
+end
+
+local resultsFrame = makeListFrame(rA)
+addHeader(rB, "TARGET TERPILIH")
+local targetsFrame = makeListFrame(rB)
+
+local refreshResults
+local function refreshTargets()
+	for i = #targets, 1, -1 do
+		if not targets[i].Parent then table.remove(targets, i) end
+	end
+	clearList(targetsFrame)
+	if #targets == 0 then
+		listLabel(targetsFrame, "Belum ada target (maks " .. MAX_TARGETS .. ")")
+	end
+	for _, plr in ipairs(targets) do
+		listButton(targetsFrame, plr.DisplayName .. " (@" .. plr.Name .. ")  [x]", Color3.fromRGB(100, 40, 55), function()
+			for i, t in ipairs(targets) do
+				if t == plr then table.remove(targets, i) break end
+			end
+			refreshTargets()
+		end)
+	end
+	refreshEsp()
+	if refreshResults then refreshResults() end
+end
+
+refreshResults = function()
+	clearList(resultsFrame)
+	local q = string.lower(searchBox.Text)
+	local list = {}
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= player then
+			local hay = string.lower(plr.Name .. " " .. plr.DisplayName)
+			if q == "" or string.find(hay, q, 1, true) then table.insert(list, plr) end
+		end
+	end
+	table.sort(list, function(a, b) return string.lower(a.DisplayName) < string.lower(b.DisplayName) end)
+	if #list == 0 then listLabel(resultsFrame, "Tidak ada hasil") end
+	for i = 1, math.min(#list, 6) do
+		local plr = list[i]
+		local color = isTarget(plr) and Color3.fromRGB(40, 100, 60) or Color3.fromRGB(26, 26, 36)
+		listButton(resultsFrame, plr.DisplayName .. " (@" .. plr.Name .. ")", color, function()
+			if isTarget(plr) then
+				for k, t in ipairs(targets) do
+					if t == plr then table.remove(targets, k) break end
+				end
+			elseif #targets >= MAX_TARGETS then
+				toast("Target penuh (maks " .. MAX_TARGETS .. ")")
+				return
+			else
+				table.insert(targets, plr)
+			end
+			refreshTargets()
+		end)
+	end
+end
+
+searchBox:GetPropertyChangedSignal("Text"):Connect(function() refreshResults() end)
+track(Players.PlayerAdded:Connect(function()
+	task.wait(0.3)
+	refreshResults()
+end))
+track(Players.PlayerRemoving:Connect(function()
+	task.defer(refreshTargets)
+end))
+
+local targetEspToggle = addToggle(rB, "ESP Target", function(on)
+	targetEspOn = on
+	refreshEsp()
+end)
+addNote(rB, "ESP target menampilkan nama (emas) + jarak hanya untuk target. Ketuk nama di hasil untuk memilih / membatalkan.")
+refreshTargets()
+
+----------------------------------------------------------------
+-- AVATAR: sembunyikan avatar pemain lain + skeleton ESP
+----------------------------------------------------------------
+local avatarSaved = setmetatable({}, { __mode = "k" })
+local skelObjs = {}
+local skelOnlyTarget = false
+local skelFolder = Instance.new("Folder")
+skelFolder.Name = "ZeFeraSkeleton"
+skelFolder.Parent = camera
+
+local R15_BONES = {
+	{ "Head", "UpperTorso" }, { "UpperTorso", "LowerTorso" },
+	{ "UpperTorso", "LeftUpperArm" }, { "LeftUpperArm", "LeftLowerArm" }, { "LeftLowerArm", "LeftHand" },
+	{ "UpperTorso", "RightUpperArm" }, { "RightUpperArm", "RightLowerArm" }, { "RightLowerArm", "RightHand" },
+	{ "LowerTorso", "LeftUpperLeg" }, { "LeftUpperLeg", "LeftLowerLeg" }, { "LeftLowerLeg", "LeftFoot" },
+	{ "LowerTorso", "RightUpperLeg" }, { "RightUpperLeg", "RightLowerLeg" }, { "RightLowerLeg", "RightFoot" },
+}
+local R6_BONES = {
+	{ "Head", "Torso" }, { "Torso", "Left Arm" }, { "Torso", "Right Arm" },
+	{ "Torso", "Left Leg" }, { "Torso", "Right Leg" },
+}
+
+local function hideAvatar(char)
+	for _, d in ipairs(char:GetDescendants()) do
+		if d:IsA("BasePart") then
+			if d.Name ~= "HumanoidRootPart" then
+				if avatarSaved[d] == nil then avatarSaved[d] = d.Transparency end
+				d.Transparency = 1
+			end
+		elseif d:IsA("Decal") or d:IsA("Texture") then
+			if avatarSaved[d] == nil then avatarSaved[d] = d.Transparency end
+			d.Transparency = 1
+		end
+	end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if hum and avatarSaved[hum] == nil then
+		avatarSaved[hum] = hum.DisplayDistanceType
+		hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+	end
+end
+
+local function restoreAvatars()
+	for inst, v in pairs(avatarSaved) do
+		pcall(function()
+			if inst:IsA("Humanoid") then inst.DisplayDistanceType = v else inst.Transparency = v end
+		end)
+		avatarSaved[inst] = nil
+	end
+end
+
+local function clearSkeleton(plr)
+	local sk = skelObjs[plr]
+	if sk then
+		for _, b in ipairs(sk.bones) do b.box:Destroy() end
+		skelObjs[plr] = nil
+	end
+end
+
+local function clearAllSkeletons()
+	for plr in pairs(skelObjs) do clearSkeleton(plr) end
+end
+
+local function buildSkeleton(plr)
+	clearSkeleton(plr)
+	local char = plr.Character
+	if not char then return end
+	local list = char:FindFirstChild("UpperTorso") and R15_BONES or R6_BONES
+	local bones = {}
+	for _, pair in ipairs(list) do
+		local pa, pb = char:FindFirstChild(pair[1]), char:FindFirstChild(pair[2])
+		if pa and pb and pa:IsA("BasePart") and pb:IsA("BasePart") then
+			local box = Instance.new("BoxHandleAdornment")
+			box.Adornee = pa
+			box.AlwaysOnTop = true
+			box.ZIndex = 5
+			box.Size = Vector3.new(0.14, 0.14, 0.5)
+			box.Transparency = 0
+			box.Color3 = Color3.new(1, 1, 1)
+			box.Parent = skelFolder
+			table.insert(bones, { a = pa, b = pb, box = box })
+		end
+	end
+	skelObjs[plr] = { char = char, bones = bones }
+end
+
+local function skelWanted(plr)
+	return skelOn and plr ~= player and (not skelOnlyTarget or isTarget(plr))
+end
+
+do
+	local acc = 0
+	RunService.Heartbeat:Connect(function(dt)
+		acc += dt
+		if acc < 0.3 then return end
+		acc = 0
+		for _, plr in ipairs(Players:GetPlayers()) do
+			if plr ~= player then
+				local char = plr.Character
+				if avatarHideOn and char then hideAvatar(char) end
+				if skelWanted(plr) and char then
+					local sk = skelObjs[plr]
+					if not sk or sk.char ~= char then buildSkeleton(plr) end
+				elseif skelObjs[plr] then
+					clearSkeleton(plr)
+				end
+			end
+		end
+		for plr in pairs(skelObjs) do
+			if not plr.Parent then clearSkeleton(plr) end
+		end
+	end)
+end
+
+RunService.RenderStepped:Connect(function()
+	if not next(skelObjs) then return end
+	local hue = Color3.fromHSV((tick() * 0.25) % 1, 1, 1)
+	for _, sk in pairs(skelObjs) do
+		for _, b in ipairs(sk.bones) do
+			local pa, pb = b.a, b.b
+			if pa.Parent and pb.Parent then
+				local rel = pa.CFrame:PointToObjectSpace(pb.Position)
+				local len = rel.Magnitude
+				if len > 0.05 then
+					local upv = (math.abs(rel.Y / len) > 0.98) and Vector3.xAxis or Vector3.yAxis
+					b.box.Size = Vector3.new(0.14, 0.14, len)
+					b.box.CFrame = CFrame.lookAt(rel / 2, rel, upv)
+					b.box.Color3 = hue
+				end
+			end
+		end
+	end
+end)
+
+addHeader(aA, "AVATAR PLAYER LAIN")
+local avatarToggle = addToggle(aA, "Sembunyikan Avatar", function(on)
+	avatarHideOn = on
+	if not on then restoreAvatars() end
+end)
+local skelToggle = addToggle(aA, "Skeleton ESP", function(on)
+	skelOn = on
+	if not on then clearAllSkeletons() end
+end)
+addNote(aA, "Sembunyikan Avatar hanya berlaku di layarmu. Nyalakan Skeleton ESP bersamaan agar posisi pemain lain tetap terlihat sebagai rangka.")
+addHeader(aB, "OPSI SKELETON")
+addToggle(aB, "Skeleton Hanya Target", function(on) skelOnlyTarget = on end)
+addNote(aB, "Kalau aktif, skeleton hanya muncul untuk target yang dipilih di tab TARGET.")
 
 ----------------------------------------------------------------
 -- Hitbox bulat
@@ -999,16 +1502,14 @@ RunService.Heartbeat:Connect(function()
 end)
 
 ----------------------------------------------------------------
--- KOLOM 3: PENGATURAN
+-- OPTIMASI
 ----------------------------------------------------------------
 addHeader(oB, "PERFORMA")
-addHeader(sA, "KECEPATAN")
-addHeader(sB, "TAMPILAN MENU")
 
--- Optimasi grafik: matikan efek, kabut, noise material, bayangan
+-- Optimasi Aman: efek, kabut, bayangan. TEKSTUR & MATERIAL MAP TIDAK DIUBAH
 local gfxOn = false
 local gfxSaved = setmetatable({}, { __mode = "k" })
-local gfxEnv, gfxTerr, gfxQuality
+local gfxEnv, gfxTerr
 local gfxConns = {}
 
 local function gfxStrip(inst)
@@ -1023,14 +1524,9 @@ local function gfxStrip(inst)
 		props = { Density = inst.Density, Haze = inst.Haze }
 		inst.Density = 0
 		inst.Haze = 0
-	elseif inst:IsA("BasePart") and not inst:IsA("Terrain")
-		and inst.Name ~= "HumanoidRootPart" and inst.Name ~= "AirwalkPlatform"
-		and not (inst.Parent and inst.Parent:FindFirstChildOfClass("Humanoid")) then
-		if inst.Material ~= Enum.Material.SmoothPlastic or inst.CastShadow then
-			props = { Material = inst.Material, CastShadow = inst.CastShadow }
-			inst.Material = Enum.Material.SmoothPlastic
-			inst.CastShadow = false
-		end
+	elseif inst:IsA("BasePart") and not inst:IsA("Terrain") and inst.CastShadow and inst.Name ~= "HumanoidRootPart" then
+		props = { CastShadow = true }
+		inst.CastShadow = false
 	end
 	if props and not gfxSaved[inst] then gfxSaved[inst] = props end
 end
@@ -1038,10 +1534,7 @@ end
 local function gfxApply()
 	gfxOn = true
 	gfxEnv, gfxTerr = {}, {}
-	local lightProps = {
-		GlobalShadows = false, FogEnd = 1e6, FogStart = 1e6, ShadowSoftness = 0,
-		EnvironmentDiffuseScale = 0, EnvironmentSpecularScale = 0,
-	}
+	local lightProps = { GlobalShadows = false, FogEnd = 1e6, FogStart = 1e6, ShadowSoftness = 0 }
 	for k, v in pairs(lightProps) do
 		pcall(function()
 			gfxEnv[k] = Lighting[k]
@@ -1050,7 +1543,7 @@ local function gfxApply()
 	end
 	local terrain = workspace:FindFirstChildOfClass("Terrain")
 	if terrain then
-		local tp = { Decoration = false, WaterWaveSize = 0, WaterWaveSpeed = 0, WaterReflectance = 0 }
+		local tp = { WaterWaveSize = 0, WaterWaveSpeed = 0, WaterReflectance = 0 }
 		for k, v in pairs(tp) do
 			pcall(function()
 				gfxTerr[k] = terrain[k]
@@ -1058,11 +1551,6 @@ local function gfxApply()
 			end)
 		end
 	end
-	pcall(function()
-		local r = settings().Rendering
-		gfxQuality = r.QualityLevel
-		r.QualityLevel = Enum.QualityLevel.Level01
-	end)
 	for _, d in ipairs(Lighting:GetDescendants()) do pcall(gfxStrip, d) end
 	table.insert(gfxConns, workspace.DescendantAdded:Connect(function(d) pcall(gfxStrip, d) end))
 	table.insert(gfxConns, Lighting.DescendantAdded:Connect(function(d) pcall(gfxStrip, d) end))
@@ -1090,10 +1578,6 @@ local function gfxRevert()
 		for k, v in pairs(gfxTerr) do pcall(function() terrain[k] = v end) end
 	end
 	gfxTerr = nil
-	if gfxQuality then
-		pcall(function() settings().Rendering.QualityLevel = gfxQuality end)
-		gfxQuality = nil
-	end
 	task.spawn(function()
 		local n = 0
 		for inst, props in pairs(gfxSaved) do
@@ -1107,10 +1591,178 @@ local function gfxRevert()
 	end)
 end
 
-local gfxToggle = addToggle(oB, "Optimasi Grafik", function(on)
+local gfxToggle = addToggle(oB, "Optimasi Aman", function(on)
 	if on then gfxApply() else gfxRevert() end
 end)
-addNote(oB, "Hapus efek, kabut, noise material & bayangan agar FPS naik. Matikan toggle untuk mengembalikan tampilan asli.")
+addNote(oB, "Hapus efek, partikel, kabut & bayangan agar FPS naik. Tekstur dan material map TIDAK diubah.")
+
+-- Optimasi Ekstrem: tambahan, mengubah tampilan map (material polos, rumput terrain off, kualitas terendah)
+local xOn = false
+local xSaved = setmetatable({}, { __mode = "k" })
+local xTerr, xQuality
+local xConns = {}
+
+local function xStrip(inst)
+	if inst:IsA("BasePart") and not inst:IsA("Terrain") and inst.Name ~= "HumanoidRootPart"
+		and inst.Name ~= "AirwalkPlatform"
+		and not (inst.Parent and inst.Parent:FindFirstChildOfClass("Humanoid")) then
+		if inst.Material ~= Enum.Material.SmoothPlastic and not xSaved[inst] then
+			xSaved[inst] = inst.Material
+			inst.Material = Enum.Material.SmoothPlastic
+		end
+	end
+end
+
+local function xApply()
+	xOn = true
+	xTerr = {}
+	local terrain = workspace:FindFirstChildOfClass("Terrain")
+	if terrain then
+		pcall(function()
+			xTerr.Decoration = terrain.Decoration
+			terrain.Decoration = false
+		end)
+	end
+	pcall(function()
+		local r = settings().Rendering
+		xQuality = r.QualityLevel
+		r.QualityLevel = Enum.QualityLevel.Level01
+	end)
+	table.insert(xConns, workspace.DescendantAdded:Connect(function(d) pcall(xStrip, d) end))
+	task.spawn(function()
+		local n = 0
+		for _, d in ipairs(workspace:GetDescendants()) do
+			if not xOn then return end
+			pcall(xStrip, d)
+			n += 1
+			if n % 300 == 0 then task.wait() end
+		end
+	end)
+end
+
+local function xRevert()
+	xOn = false
+	for _, c in ipairs(xConns) do c:Disconnect() end
+	xConns = {}
+	local terrain = workspace:FindFirstChildOfClass("Terrain")
+	if terrain and xTerr then
+		for k, v in pairs(xTerr) do pcall(function() terrain[k] = v end) end
+	end
+	xTerr = nil
+	if xQuality then
+		pcall(function() settings().Rendering.QualityLevel = xQuality end)
+		xQuality = nil
+	end
+	task.spawn(function()
+		local n = 0
+		for inst, mat in pairs(xSaved) do
+			pcall(function() inst.Material = mat end)
+			xSaved[inst] = nil
+			n += 1
+			if n % 300 == 0 then task.wait() end
+		end
+	end)
+end
+
+local xToggle = addToggle(oB, "Optimasi Ekstrem", function(on)
+	if on then xApply() else xRevert() end
+end)
+addNote(oB, "PERINGATAN: mengubah tampilan map (material jadi polos, rumput terrain off, kualitas terendah). Matikan untuk mengembalikan.")
+
+----------------------------------------------------------------
+-- POPUP: tombol melayang pilihan sendiri
+----------------------------------------------------------------
+local floats = {}
+local floatSlots = {}
+
+local function makeFloat(label, onClick, obj)
+	local n = 1
+	while floatSlots[n] do n += 1 end
+	floatSlots[n] = true
+
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.fromOffset(50, 50)
+	btn.Position = UDim2.new(1, -66 - math.floor((n - 1) / 6) * 58, 0.1, ((n - 1) % 6) * 56)
+	btn.BackgroundColor3 = Color3.fromRGB(14, 14, 20)
+	btn.Text = label
+	btn.Font = Enum.Font.GothamBlack
+	btn.TextSize = 11
+	btn.TextColor3 = Color3.new(1, 1, 1)
+	btn.TextWrapped = true
+	btn.Parent = gui
+	corner(btn, 25)
+	addStroke(btn, 2.5, (n * 0.13) % 1)
+
+	local dragStart, startPos, moved
+	btn.InputBegan:Connect(function(i)
+		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+			moved = false
+			if not tpLocked then dragStart, startPos = i.Position, btn.Position end
+		end
+	end)
+	local c1 = UIS.InputChanged:Connect(function(i)
+		if dragStart and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+			local d = i.Position - dragStart
+			if d.Magnitude > 8 then moved = true end
+			if moved then
+				btn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
+			end
+		end
+	end)
+	local c2 = UIS.InputEnded:Connect(function(i)
+		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+			dragStart = nil
+		end
+	end)
+	btn.MouseButton1Click:Connect(function()
+		if not moved then onClick() end
+	end)
+	btn.Destroying:Connect(function()
+		floatSlots[n] = nil
+		pcall(function() c1:Disconnect() end)
+		pcall(function() c2:Disconnect() end)
+	end)
+
+	table.insert(floats, { btn = btn, obj = obj })
+	return btn
+end
+
+local function addPopup(parent, text, label, onClick, obj)
+	local fl
+	addToggle(parent, "Popup " .. text, function(on)
+		if on then
+			if not fl or not fl.Parent then fl = makeFloat(label, onClick, obj) end
+		elseif fl then
+			fl:Destroy()
+			fl = nil
+		end
+	end)
+end
+
+addHeader(pA, "TOMBOL ON/OFF")
+addPopup(pA, "Fly", "FLY", function() flyToggle.set(not flyToggle.on) end, flyToggle)
+addPopup(pA, "Noclip", "NOCLIP", function() noclipToggle.set(not noclipToggle.on) end, noclipToggle)
+addPopup(pA, "Airwalk", "AIR", function() airToggle.set(not airToggle.on) end, airToggle)
+addPopup(pA, "NoClip+Airwalk", "NC+A", function() comboToggle.set(not comboToggle.on) end, comboToggle)
+addPopup(pA, "Speed Up", "SPEED", function() speedToggle.set(not speedToggle.on) end, speedToggle)
+addPopup(pA, "Jalan Dinding", "WALL", function() wallToggle.set(not wallToggle.on) end, wallToggle)
+addPopup(pA, "ESP", "ESP", function() espToggle.set(not espToggle.on) end, espToggle)
+addPopup(pA, "ESP Target", "TARGET", function() targetEspToggle.set(not targetEspToggle.on) end, targetEspToggle)
+addPopup(pA, "Hitbox", "HIT", function() hbToggle.set(not hbToggle.on) end, hbToggle)
+addPopup(pA, "Hide Avatar", "AVA", function() avatarToggle.set(not avatarToggle.on) end, avatarToggle)
+addPopup(pA, "Skeleton", "SKEL", function() skelToggle.set(not skelToggle.on) end, skelToggle)
+
+addHeader(pB, "TOMBOL AKSI")
+addPopup(pB, "TP Acak", "TP", tpRandom)
+addPopup(pB, "TP Bawah Kaki", "TP\nBAWAH", tpUnder)
+addPopup(pB, "Bunuh Diri", "DEAD", doSuicide)
+addNote(pB, "Nyalakan 'Popup ...' untuk memunculkan tombol melayang. Geser untuk memindahkan. Kunci posisinya lewat 'Kunci Pop-up' di tab TELEPORT. Tombol ON/OFF berwarna hijau saat fiturnya aktif.")
+
+----------------------------------------------------------------
+-- PENGATURAN
+----------------------------------------------------------------
+addHeader(sA, "KECEPATAN")
+addHeader(sB, "TAMPILAN MENU")
 addSlider(sA, sA, "Fly Speed", 10, 300, flySpeed, function(v) flySpeed = v end, nil, 1000)
 addSlider(sA, sA, "Walk Speed", 16, 200, walkSpeed, function(v) walkSpeed = v end, nil, 500)
 addSlider(sB, sB, "Transparansi Menu", 0, 80, 0, function(v) applyMenuTransparency(v / 100) end, "%")
@@ -1123,6 +1775,10 @@ addSlider(sB, sB, "Lebar Menu", 360, maxW, math.min(MENU_W, maxW), function(v)
 		TweenService:Create(main, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = FULL }):Play()
 	end
 end, " px")
+
+local soundToggle = addToggle(sB, "Suara Klik Lucu", function(on) clickOn = on end)
+soundToggle.set(true)
+addSlider(sB, sB, "Volume Klik", 0, 100, math.floor(clickVol * 100), function(v) clickVol = v / 100 end, "%")
 
 do
 	local row = Instance.new("Frame")
@@ -1253,6 +1909,14 @@ RunService.RenderStepped:Connect(function()
 	titleGrad.Rotation = (t * 90) % 360
 	for _, s in ipairs(scrolls) do
 		s.ScrollBarImageColor3 = Color3.fromHSV(h, 1, 1)
+	end
+	for i = #floats, 1, -1 do
+		local f = floats[i]
+		if not f.btn.Parent then
+			table.remove(floats, i)
+		elseif f.obj then
+			f.btn.BackgroundColor3 = f.obj.on and Color3.fromRGB(26, 90, 52) or Color3.fromRGB(14, 14, 20)
+		end
 	end
 end)
 
@@ -1479,22 +2143,32 @@ track(player.CharacterAdded:Connect(function()
 	if flyToggle.on then flyToggle.on = false flyToggle.set(false) end
 	if comboToggle.on then comboToggle.on = false comboToggle.set(false) end
 	if airToggle.on then airToggle.set(false) end
+	if wallToggle.on then wallToggle.on = false wallToggle.set(false) end
 end))
 
 ----------------------------------------------------------------
 -- Unload (tombol DEL): matikan semua fitur, kembalikan kondisi, hapus menu
 ----------------------------------------------------------------
 unloadHub = function()
-	for _, t in ipairs({ comboToggle, flyToggle, noclipToggle, airToggle, speedToggle, darkToggle, espToggle, hbToggle, gfxToggle }) do
+	for _, t in ipairs({ comboToggle, flyToggle, wallToggle, noclipToggle, airToggle, speedToggle, darkToggle, espToggle, targetEspToggle, hbToggle, avatarToggle, skelToggle, gfxToggle, xToggle }) do
 		if t.on then pcall(t.set, false) end
 	end
 	tintTarget = 1
 	for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
 	pcall(function() tintGui:Destroy() end)
+	pcall(function() skelFolder:Destroy() end)
+	for _, snd in ipairs(clickSounds) do pcall(function() snd:Destroy() end) end
 	pcall(function() gui:Destroy() end)
 	pcall(function() getgenv().ZeFeraUnload = nil end)
 end
 pcall(function() getgenv().ZeFeraUnload = unloadHub end)
+
+-- Suara klik untuk semua tombol (termasuk yang dibuat belakangan)
+local function hookClick(d)
+	if d:IsA("GuiButton") then d.MouseButton1Click:Connect(playClick) end
+end
+for _, d in ipairs(gui:GetDescendants()) do hookClick(d) end
+gui.DescendantAdded:Connect(hookClick)
 
 setOpen(true)
 
