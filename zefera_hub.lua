@@ -23,8 +23,10 @@ do
 	if ok and typeof(h) == "Instance" then guiParent = h end
 end
 for _, p in ipairs({ playerGui, guiParent }) do
-	local old = p:FindFirstChild("ZeFeraHub")
-	if old then old:Destroy() end
+	for _, n in ipairs({ "ZeFeraHub", "ZeFeraTint" }) do
+		local old = p:FindFirstChild(n)
+		if old then old:Destroy() end
+	end
 end
 
 ----------------------------------------------------------------
@@ -36,6 +38,9 @@ local flying, noclip, airwalk, speedUp = false, false, false, false
 local espOn = false
 local hbOn, hbHide, hbSkipTeam = false, false, false
 local hbSize, hbTrans = 12, 0.7
+local hbRgb, tintOn, tintStrength = false, true, 45
+local noclipSafe, safePart, safeY = false, nil, nil
+local isOpen = false
 local bv, bg, airPart, platY, origWalk
 
 ----------------------------------------------------------------
@@ -46,6 +51,28 @@ gui.Name = "ZeFeraHub"
 gui.ResetOnSpawn = false
 gui.DisplayOrder = 999
 gui.Parent = guiParent
+
+-- Overlay warna layar (saat masuk area hitbox)
+local tintGui = Instance.new("ScreenGui")
+tintGui.Name = "ZeFeraTint"
+tintGui.ResetOnSpawn = false
+tintGui.IgnoreGuiInset = true
+tintGui.DisplayOrder = 500
+tintGui.Parent = guiParent
+
+local tint = Instance.new("Frame")
+tint.Size = UDim2.fromScale(1, 1)
+tint.BackgroundTransparency = 1
+tint.BorderSizePixel = 0
+tint.Active = false
+tint.Parent = tintGui
+
+local tintTarget, tintColor = 1, Color3.new(1, 1, 1)
+RunService.RenderStepped:Connect(function(dt)
+	tint.BackgroundColor3 = tintColor
+	local a = tint.BackgroundTransparency
+	tint.BackgroundTransparency = a + (tintTarget - a) * math.min(1, dt * 10)
+end)
 
 local rgbStrokes = {}
 local function addStroke(parent, thickness, offset)
@@ -105,7 +132,7 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, -44, 1, 0)
 title.Position = UDim2.fromOffset(14, 0)
 title.BackgroundTransparency = 1
-title.Text = "✦ ZEFERA HUB ✦"
+title.Text = "ZEFERA HUB"
 title.Font = Enum.Font.GothamBlack
 title.TextSize = 18
 title.TextColor3 = Color3.new(1, 1, 1)
@@ -117,7 +144,7 @@ local closeBtn = Instance.new("TextButton")
 closeBtn.Size = UDim2.fromOffset(28, 28)
 closeBtn.Position = UDim2.new(1, -38, 0, 6)
 closeBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 42)
-closeBtn.Text = "✕"
+closeBtn.Text = "X"
 closeBtn.Font = Enum.Font.GothamBold
 closeBtn.TextSize = 14
 closeBtn.TextColor3 = Color3.new(1, 1, 1)
@@ -156,9 +183,9 @@ local openBtn = Instance.new("TextButton")
 openBtn.Size = UDim2.fromOffset(46, 46)
 openBtn.Position = UDim2.new(0, 12, 0.1, 0)
 openBtn.BackgroundColor3 = Color3.fromRGB(14, 14, 20)
-openBtn.Text = "☰"
+openBtn.Text = "ZF"
 openBtn.Font = Enum.Font.GothamBlack
-openBtn.TextSize = 22
+openBtn.TextSize = 16
 openBtn.TextColor3 = Color3.new(1, 1, 1)
 openBtn.Parent = gui
 corner(openBtn, 23)
@@ -234,6 +261,23 @@ local function addToggle(parent, text, callback)
 
 	b.MouseButton1Click:Connect(function() obj.set(not obj.on) end)
 	return obj
+end
+
+local function addButton(parent, text, callback)
+	local b = Instance.new("TextButton")
+	b.Size = UDim2.new(1, 0, 0, 34)
+	b.BackgroundColor3 = Color3.fromRGB(26, 26, 36)
+	b.Text = text
+	b.Font = Enum.Font.GothamBold
+	b.TextSize = 13
+	b.TextColor3 = Color3.new(1, 1, 1)
+	b.LayoutOrder = nextOrder()
+	b.Parent = parent
+	corner(b, 10)
+	addStroke(b, 1.5, order * 0.07)
+	registerPanel(b)
+	b.MouseButton1Click:Connect(callback)
+	return b
 end
 
 local function addSlider(parent, scrollFrame, labelText, min, max, initial, onChange, suffix)
@@ -368,7 +412,7 @@ end)
 local noclipToggle = addToggle(colMove, "Noclip", function(on) noclip = on end)
 
 RunService.Stepped:Connect(function()
-	if not noclip then return end
+	if not (noclip or noclipSafe) then return end
 	local char = player.Character
 	if not char then return end
 	for _, p in ipairs(char:GetDescendants()) do
@@ -376,6 +420,53 @@ RunService.Stepped:Connect(function()
 			p.CanCollide = false
 		end
 	end
+end)
+
+-- Noclip Aman = noclip + airwalk satu paket (lantai tak terlihat mengikuti kakimu)
+local safeToggle
+safeToggle = addToggle(colMove, "Noclip Aman", function(on)
+	noclipSafe = on
+	if on then
+		local _, root, hum = getChar()
+		if not (root and hum) then noclipSafe = false return end
+		safePart = Instance.new("Part")
+		safePart.Name = "NoclipFloor"
+		safePart.Size = Vector3.new(7, 1, 7)
+		safePart.Anchored = true
+		safePart.CanCollide = true
+		safePart.Transparency = 1
+		safePart.CastShadow = false
+		safePart.Parent = workspace
+		local feet = (hum.RigType == Enum.HumanoidRigType.R15) and (hum.HipHeight + root.Size.Y / 2) or 3
+		safeY = root.Position.Y - feet - 0.5
+	elseif safePart then
+		safePart:Destroy()
+		safePart = nil
+	end
+end)
+
+local safeRay = RaycastParams.new()
+safeRay.FilterType = Enum.RaycastFilterType.Exclude
+safeRay.RespectCanCollide = true
+
+RunService.Heartbeat:Connect(function(dt)
+	if not (noclipSafe and safePart) then return end
+	local char, root, hum = getChar()
+	if not (root and hum) then return end
+	if up or down then
+		-- naik/turun manual (tembus lantai) pakai Space/Shift atau tombol UP/DOWN
+		if up then safeY += 25 * dt end
+		if down then safeY -= 25 * dt end
+	else
+		-- otomatis ikuti permukaan tanah di bawah kaki
+		safeRay.FilterDescendantsInstances = { char, safePart }
+		local hit = workspace:Raycast(root.Position, Vector3.new(0, -80, 0), safeRay)
+		if hit then
+			local target = hit.Position.Y - 0.5
+			safeY += (target - safeY) * math.min(1, dt * 15)
+		end
+	end
+	safePart.CFrame = CFrame.new(root.Position.X, safeY, root.Position.Z)
 end)
 
 local function destroyAir()
@@ -452,6 +543,100 @@ addToggle(colMove, "Anti Gelap", function(on)
 		for k, v in pairs(savedLight) do Lighting[k] = v end
 	end
 end)
+
+----------------------------------------------------------------
+-- TP Sayang Nyawa (teleport ke pemain acak) + tombol pintas
+----------------------------------------------------------------
+local function toast(text)
+	local t = Instance.new("TextLabel")
+	t.Size = UDim2.fromOffset(230, 30)
+	t.Position = UDim2.new(0.5, -115, 0, 12)
+	t.BackgroundColor3 = Color3.fromRGB(14, 14, 20)
+	t.BackgroundTransparency = 0.2
+	t.Text = text
+	t.Font = Enum.Font.GothamBold
+	t.TextSize = 13
+	t.TextColor3 = Color3.new(1, 1, 1)
+	t.Parent = gui
+	corner(t, 10)
+	local st = Instance.new("UIStroke", t)
+	st.Thickness = 1
+	st.Transparency = 0.5
+	task.delay(1.6, function()
+		local tw = TweenService:Create(t, TweenInfo.new(0.4), { BackgroundTransparency = 1, TextTransparency = 1 })
+		tw:Play()
+		tw.Completed:Wait()
+		t:Destroy()
+	end)
+end
+
+local function tpRandom()
+	local _, root = getChar()
+	if not root then return end
+	local pool = {}
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= player then
+			local c = plr.Character
+			local r = c and c:FindFirstChild("HumanoidRootPart")
+			local h = c and c:FindFirstChildOfClass("Humanoid")
+			if r and h and h.Health > 0 then table.insert(pool, plr) end
+		end
+	end
+	if #pool == 0 then
+		toast("Tidak ada pemain lain")
+		return
+	end
+	local plr = pool[math.random(1, #pool)]
+	local target = plr.Character.HumanoidRootPart
+	root.AssemblyLinearVelocity = Vector3.zero
+	root.CFrame = target.CFrame * CFrame.new(math.random(-3, 3), 0, 5)
+	toast("TP ke " .. plr.DisplayName)
+end
+
+addButton(colMove, "TP Sayang Nyawa", tpRandom)
+
+-- Tombol pintas melayang (bisa di-drag)
+local tpBtn = Instance.new("TextButton")
+tpBtn.Name = "TPShortcut"
+tpBtn.Size = UDim2.fromOffset(54, 54)
+tpBtn.Position = UDim2.new(1, -150, 0.5, -27)
+tpBtn.BackgroundColor3 = Color3.fromRGB(14, 14, 20)
+tpBtn.Text = "TP"
+tpBtn.Font = Enum.Font.GothamBlack
+tpBtn.TextSize = 16
+tpBtn.TextColor3 = Color3.new(1, 1, 1)
+tpBtn.Parent = gui
+corner(tpBtn, 27)
+addStroke(tpBtn, 2.5, 0.5)
+
+do
+	local dragStart, startPos, moved
+	tpBtn.InputBegan:Connect(function(i)
+		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+			dragStart, startPos, moved = i.Position, tpBtn.Position, false
+		end
+	end)
+	UIS.InputChanged:Connect(function(i)
+		if dragStart and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+			local d = i.Position - dragStart
+			if d.Magnitude > 8 then moved = true end
+			if moved then
+				tpBtn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
+			end
+		end
+	end)
+	UIS.InputEnded:Connect(function(i)
+		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+			dragStart = nil
+		end
+	end)
+	tpBtn.MouseButton1Click:Connect(function()
+		if not moved then tpRandom() end
+	end)
+end
+
+local tpToggle = addToggle(colMove, "Pintasan TP", function(on) tpBtn.Visible = on end)
+tpToggle.set(true)
 
 ----------------------------------------------------------------
 -- ESP (nama + jarak)
@@ -603,14 +788,22 @@ addToggle(colVisual, "Hitbox Bulat", function(on)
 end)
 addToggle(colVisual, "Sembunyikan Hitbox", function(on) hbHide = on end)
 addToggle(colVisual, "Abaikan Tim", function(on) hbSkipTeam = on end)
+addToggle(colVisual, "Hitbox RGB", function(on) hbRgb = on end)
+local tintToggle = addToggle(colVisual, "Warna Layar", function(on) tintOn = on end)
+tintToggle.set(true)
+addSlider(colVisual, colVisual, "Kekuatan Warna", 10, 90, tintStrength, function(v) tintStrength = v end, "%")
 addSlider(colVisual, colVisual, "Besar Hitbox", 2, 350, hbSize, function(v) hbSize = v end, " st")
 addSlider(colVisual, colVisual, "Transparansi Hitbox", 0, 100, math.floor(hbTrans * 100), function(v) hbTrans = v / 100 end, "%")
 
 RunService.Heartbeat:Connect(function()
 	if not hbOn then
 		if next(hbSaved) then restoreAllHb() end
+		tintTarget = 1
 		return
 	end
+	local hbColor = hbRgb and Color3.fromHSV((tick() * 0.25) % 1, 1, 1) or Color3.fromRGB(255, 60, 120)
+	local camPos = camera.CFrame.Position
+	local insideColor = nil
 	for _, plr in ipairs(Players:GetPlayers()) do
 		if plr ~= player then
 			local char = plr.Character
@@ -639,11 +832,18 @@ RunService.Heartbeat:Connect(function()
 					else
 						hrp.Transparency = hbTrans
 						hrp.Material = Enum.Material.Neon
-						hrp.Color = Color3.fromRGB(255, 60, 120)
+						hrp.Color = hbColor
+						if (hrp.Position - camPos).Magnitude < hbSize / 2 then insideColor = hbColor end
 					end
 				end
 			end
 		end
+	end
+	if insideColor and tintOn then
+		tintTarget = 1 - tintStrength / 100
+		tintColor = insideColor
+	else
+		tintTarget = 1
 	end
 end)
 
@@ -654,6 +854,15 @@ addHeader(colSet, "PENGATURAN")
 addSlider(colSet, colSet, "Fly Speed", 10, 300, flySpeed, function(v) flySpeed = v end)
 addSlider(colSet, colSet, "Walk Speed", 16, 200, walkSpeed, function(v) walkSpeed = v end)
 addSlider(colSet, colSet, "Transparansi Menu", 0, 80, 0, function(v) applyMenuTransparency(v / 100) end, "%")
+local maxW = math.max(420, math.floor(camera.ViewportSize.X - 20))
+addSlider(colSet, colSet, "Lebar Menu", 360, maxW, math.min(MENU_W, maxW), function(v)
+	MENU_W = v
+	FULL = UDim2.fromOffset(MENU_W, MENU_H)
+	CLOSED = UDim2.fromOffset(MENU_W, 0)
+	if isOpen then
+		TweenService:Create(main, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = FULL }):Play()
+	end
+end, " px")
 
 do
 	local row = Instance.new("Frame")
@@ -679,8 +888,8 @@ do
 		b.MouseButton1Up:Connect(function() setter(false) end)
 		b.MouseLeave:Connect(function() setter(false) end)
 	end
-	mk("▲ UP", 0, 0, function(v) up = v end)
-	mk("▼ DOWN", 0.5, 4, function(v) down = v end)
+	mk("UP", 0, 0, function(v) up = v end)
+	mk("DOWN", 0.5, 4, function(v) down = v end)
 end
 
 ----------------------------------------------------------------
@@ -709,21 +918,18 @@ end)
 ----------------------------------------------------------------
 -- Animasi buka/tutup + drag
 ----------------------------------------------------------------
-local isOpen = false
 local function setOpen(v)
 	isOpen = v
 	if v then
 		main.Visible = true
 		main.Size = CLOSED
 		TweenService:Create(main, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = FULL }):Play()
-		TweenService:Create(openBtn, TweenInfo.new(0.3), { Rotation = 90 }):Play()
 	else
 		local t = TweenService:Create(main, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Size = CLOSED })
 		t.Completed:Connect(function()
 			if not isOpen then main.Visible = false end
 		end)
 		t:Play()
-		TweenService:Create(openBtn, TweenInfo.new(0.3), { Rotation = 0 }):Play()
 	end
 end
 
@@ -759,6 +965,7 @@ UIS.InputBegan:Connect(function(i, gp)
 	if k == Enum.KeyCode.F then flyToggle.set(not flyToggle.on)
 	elseif k == Enum.KeyCode.N then noclipToggle.set(not noclipToggle.on)
 	elseif k == Enum.KeyCode.RightShift then setOpen(not isOpen)
+	elseif k == Enum.KeyCode.T then tpRandom()
 	elseif k == Enum.KeyCode.Space then up = true
 	elseif k == Enum.KeyCode.LeftShift then down = true end
 end)
@@ -797,6 +1004,7 @@ player.CharacterAdded:Connect(function()
 	flying = false
 	if flyToggle.on then flyToggle.on = false flyToggle.set(false) end
 	if airToggle.on then airToggle.set(false) end
+	if safeToggle.on then safeToggle.set(false) end
 end)
 
 setOpen(true)
