@@ -1,6 +1,6 @@
 -- ZeFera Hub v4 (LocalScript / loadstring compatible)
 -- Fitur: Fly, Noclip, Airwalk, NoClip+Airwalk, Speed Up (bisa diketik), Anti Gelap, ESP, Hitbox bulat + Zona,
---        TP Sayang Nyawa (pintasan bisa dikunci), Optimasi Grafik, Transparansi/Lebar Menu, Unload (DEL)
+--        TP Sayang Nyawa (pintasan bisa dikunci), Optimasi Grafik, Transparansi/Lebar Menu, Config manual (CFG), Unload (DEL)
 -- Key: F = fly | N = noclip | RightShift = buka/tutup menu | Space/Shift = naik/turun
 
 local __ok, __err = xpcall(function()
@@ -59,7 +59,7 @@ local hbOn, hbHide, hbSkipTeam = false, false, false
 local hbSize, hbTrans = 12, 0.7
 local hbRgb, tintOn, tintStrength = false, true, 45
 local isOpen = false
-local unloadHub
+local unloadHub, toggleCfg
 local bv, bg, airPart, platY, origWalk
 
 ----------------------------------------------------------------
@@ -196,6 +196,18 @@ do
 	end)
 end
 
+local cfgBtn = Instance.new("TextButton")
+cfgBtn.Size = UDim2.fromOffset(34, 28)
+cfgBtn.Position = UDim2.new(1, -114, 0, 6)
+cfgBtn.BackgroundColor3 = Color3.fromRGB(40, 70, 140)
+cfgBtn.Text = "CFG"
+cfgBtn.Font = Enum.Font.GothamBold
+cfgBtn.TextSize = 11
+cfgBtn.TextColor3 = Color3.new(1, 1, 1)
+cfgBtn.Parent = header
+corner(cfgBtn, 8)
+cfgBtn.MouseButton1Click:Connect(function() if toggleCfg then toggleCfg() end end)
+
 -- 3 kolom
 local function makeColumn(index)
 	local s = Instance.new("ScrollingFrame")
@@ -239,6 +251,8 @@ addStroke(openBtn, 2.5, 0.15)
 ----------------------------------------------------------------
 -- Builder komponen
 ----------------------------------------------------------------
+local toggleReg, sliderReg = {}, {}
+
 local order = 0
 local function nextOrder() order += 1 return order end
 
@@ -257,6 +271,7 @@ end
 
 local function addToggle(parent, text, callback)
 	local obj = { on = false }
+	toggleReg[text] = obj
 
 	local b = Instance.new("TextButton")
 	b.Size = UDim2.new(1, 0, 0, 34)
@@ -421,6 +436,15 @@ local function addSlider(parent, scrollFrame, labelText, min, max, initial, onCh
 			refresh()
 		end)
 	end
+
+	sliderReg[labelText] = {
+		get = function() return value end,
+		set = function(v)
+			value = math.clamp(math.floor(v + 0.5), min, typeMax or max)
+			refresh()
+			onChange(value)
+		end,
+	}
 
 	local dragging = false
 	local function setFromX(x)
@@ -1142,6 +1166,220 @@ RunService.RenderStepped:Connect(function()
 		s.ScrollBarImageColor3 = Color3.fromHSV(h, 1, 1)
 	end
 end)
+
+----------------------------------------------------------------
+-- Panel Config (simpan / muat manual, 3 slot) - jendela terpisah
+----------------------------------------------------------------
+local HttpService = game:GetService("HttpService")
+local CFG_DIR = "ZeFera"
+local function cfgPath(slot) return CFG_DIR .. "/slot" .. slot .. ".json" end
+
+local function collectCfg()
+	local data = { toggles = {}, sliders = {} }
+	for k, t in pairs(toggleReg) do data.toggles[k] = t.on end
+	for k, sl in pairs(sliderReg) do data.sliders[k] = sl.get() end
+	local p = tpBtn.Position
+	data.tp = { p.X.Scale, p.X.Offset, p.Y.Scale, p.Y.Offset }
+	return data
+end
+
+local function applyCfg(data)
+	if type(data) ~= "table" then return end
+	for k, v in pairs(data.sliders or {}) do
+		local sl = sliderReg[k]
+		if sl and type(v) == "number" then sl.set(v) end
+	end
+	-- toggle: NoClip+Airwalk dulu supaya urutannya konsisten
+	local keys = {}
+	for k, v in pairs(data.toggles or {}) do
+		if toggleReg[k] and type(v) == "boolean" then table.insert(keys, k) end
+	end
+	table.sort(keys, function(a, b)
+		if a == "NoClip+Airwalk" then return b ~= a end
+		if b == "NoClip+Airwalk" then return false end
+		return a < b
+	end)
+	for _, k in ipairs(keys) do
+		local t = toggleReg[k]
+		local v = data.toggles[k]
+		if t.on ~= v then t.set(v) end
+	end
+	if type(data.tp) == "table" and #data.tp == 4 then
+		tpBtn.Position = UDim2.new(data.tp[1], data.tp[2], data.tp[3], data.tp[4])
+	end
+end
+
+local cfgDefaults = collectCfg()
+
+local function saveSlot(slot)
+	if not (writefile and readfile and isfile) then
+		return false, "Executor tidak mendukung simpan file"
+	end
+	pcall(function()
+		if makefolder and not (isfolder and isfolder(CFG_DIR)) then makefolder(CFG_DIR) end
+	end)
+	local ok = pcall(function()
+		writefile(cfgPath(slot), HttpService:JSONEncode(collectCfg()))
+	end)
+	if ok then return true, "Tersimpan di Slot " .. slot end
+	return false, "Gagal menyimpan"
+end
+
+local function loadSlot(slot)
+	if not (readfile and isfile) then
+		return false, "Executor tidak mendukung baca file"
+	end
+	local path = cfgPath(slot)
+	if not isfile(path) then return false, "Slot " .. slot .. " masih kosong" end
+	local ok, data = pcall(function() return HttpService:JSONDecode(readfile(path)) end)
+	if not ok then return false, "File config rusak" end
+	applyCfg(data)
+	return true, "Slot " .. slot .. " dimuat"
+end
+
+local CFG_W, CFG_H = 250, 176
+local cfgFrame = Instance.new("Frame")
+cfgFrame.Size = UDim2.fromOffset(CFG_W, 0)
+cfgFrame.Position = UDim2.new(0.5, -125, 0.3, 0)
+cfgFrame.BackgroundColor3 = Color3.fromRGB(14, 14, 20)
+cfgFrame.BorderSizePixel = 0
+cfgFrame.ClipsDescendants = true
+cfgFrame.Visible = false
+cfgFrame.Parent = gui
+corner(cfgFrame, 14)
+addStroke(cfgFrame, 2.5, 0.5)
+registerPanel(cfgFrame)
+
+local cfgHeader = Instance.new("Frame")
+cfgHeader.Size = UDim2.new(1, 0, 0, 36)
+cfgHeader.BackgroundTransparency = 1
+cfgHeader.Active = true
+cfgHeader.Parent = cfgFrame
+
+local cfgTitle = Instance.new("TextLabel")
+cfgTitle.Size = UDim2.new(1, -50, 1, 0)
+cfgTitle.Position = UDim2.fromOffset(12, 0)
+cfgTitle.BackgroundTransparency = 1
+cfgTitle.Text = "CONFIG"
+cfgTitle.Font = Enum.Font.GothamBlack
+cfgTitle.TextSize = 15
+cfgTitle.TextColor3 = Color3.new(1, 1, 1)
+cfgTitle.TextXAlignment = Enum.TextXAlignment.Left
+cfgTitle.Parent = cfgHeader
+
+local cfgClose = Instance.new("TextButton")
+cfgClose.Size = UDim2.fromOffset(28, 26)
+cfgClose.Position = UDim2.new(1, -36, 0, 5)
+cfgClose.BackgroundColor3 = Color3.fromRGB(30, 30, 42)
+cfgClose.Text = "X"
+cfgClose.Font = Enum.Font.GothamBold
+cfgClose.TextSize = 14
+cfgClose.TextColor3 = Color3.new(1, 1, 1)
+cfgClose.Parent = cfgHeader
+corner(cfgClose, 8)
+
+local function cfgButton(text, x, y, w, h, cb)
+	local b = Instance.new("TextButton")
+	b.Size = UDim2.fromOffset(w, h)
+	b.Position = UDim2.fromOffset(x, y)
+	b.BackgroundColor3 = Color3.fromRGB(26, 26, 36)
+	b.Text = text
+	b.Font = Enum.Font.GothamBold
+	b.TextSize = 13
+	b.TextColor3 = Color3.new(1, 1, 1)
+	b.Parent = cfgFrame
+	corner(b, 10)
+	addStroke(b, 1.5, x / 250)
+	registerPanel(b)
+	b.MouseButton1Click:Connect(cb)
+	return b
+end
+
+local statusLbl = Instance.new("TextLabel")
+statusLbl.Size = UDim2.fromOffset(230, 36)
+statusLbl.Position = UDim2.fromOffset(10, 124)
+statusLbl.BackgroundTransparency = 1
+statusLbl.Font = Enum.Font.GothamMedium
+statusLbl.TextSize = 12
+statusLbl.TextWrapped = true
+statusLbl.TextXAlignment = Enum.TextXAlignment.Left
+statusLbl.TextYAlignment = Enum.TextYAlignment.Top
+statusLbl.TextColor3 = Color3.fromRGB(185, 185, 205)
+statusLbl.Text = ""
+statusLbl.Parent = cfgFrame
+
+local COL_OK, COL_ERR, COL_INFO = Color3.fromRGB(90, 230, 130), Color3.fromRGB(255, 100, 110), Color3.fromRGB(185, 185, 205)
+local function setStatus(text, color)
+	statusLbl.Text = text
+	statusLbl.TextColor3 = color or COL_INFO
+end
+
+local cfgSlot = 1
+local slotBtns = {}
+local function selectSlot(n)
+	cfgSlot = n
+	for i, b in ipairs(slotBtns) do
+		b.BackgroundColor3 = (i == n) and Color3.fromRGB(50, 90, 170) or Color3.fromRGB(26, 26, 36)
+	end
+	local has = false
+	if isfile then pcall(function() has = isfile(cfgPath(n)) end) end
+	setStatus("Slot " .. n .. (has and ": ada config tersimpan" or ": masih kosong"), COL_INFO)
+end
+
+for i = 1, 3 do
+	slotBtns[i] = cfgButton("Slot " .. i, 10 + (i - 1) * 78, 42, 74, 30, function() selectSlot(i) end)
+end
+
+cfgButton("Save", 10, 80, 74, 34, function()
+	local ok, msg = saveSlot(cfgSlot)
+	setStatus(msg, ok and COL_OK or COL_ERR)
+end)
+cfgButton("Load", 88, 80, 74, 34, function()
+	local ok, msg = loadSlot(cfgSlot)
+	setStatus(msg, ok and COL_OK or COL_ERR)
+end)
+cfgButton("Reset", 166, 80, 74, 34, function()
+	applyCfg(cfgDefaults)
+	setStatus("Pengaturan dikembalikan ke default", COL_OK)
+end)
+
+local cfgOpen = false
+toggleCfg = function()
+	cfgOpen = not cfgOpen
+	if cfgOpen then
+		cfgFrame.Visible = true
+		cfgFrame.Size = UDim2.fromOffset(CFG_W, 0)
+		TweenService:Create(cfgFrame, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.fromOffset(CFG_W, CFG_H) }):Play()
+		selectSlot(cfgSlot)
+	else
+		local t = TweenService:Create(cfgFrame, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Size = UDim2.fromOffset(CFG_W, 0) })
+		t.Completed:Connect(function()
+			if not cfgOpen then cfgFrame.Visible = false end
+		end)
+		t:Play()
+	end
+end
+cfgClose.MouseButton1Click:Connect(function() if cfgOpen then toggleCfg() end end)
+
+do
+	local dragging, dragStart, startPos
+	cfgHeader.InputBegan:Connect(function(i)
+		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+			dragging, dragStart, startPos = true, i.Position, cfgFrame.Position
+		end
+	end)
+	UIS.InputChanged:Connect(function(i)
+		if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+			local d = i.Position - dragStart
+			cfgFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
+		end
+	end)
+	UIS.InputEnded:Connect(function(i)
+		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+			dragging = false
+		end
+	end)
+end
 
 ----------------------------------------------------------------
 -- Respawn
