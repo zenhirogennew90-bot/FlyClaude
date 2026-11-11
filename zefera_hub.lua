@@ -66,6 +66,7 @@ local avatarHideOn, skelOn = false, false
 local clickOn, clickVol = true, 0.6
 local isOpen = false
 local unloadHub, toggleCfg
+local targetEspToggle, avatarToggle, skelToggle, skelFolder, gfxToggle, xToggle
 local bv, bg, airPart, platY, origWalk
 
 ----------------------------------------------------------------
@@ -1129,6 +1130,7 @@ end
 ----------------------------------------------------------------
 -- TARGET: cari & pilih maks 3 player untuk ESP target
 ----------------------------------------------------------------
+do
 local MAX_TARGETS = 3
 addHeader(rA, "CARI PLAYER")
 
@@ -1259,7 +1261,7 @@ track(Players.PlayerRemoving:Connect(function()
 	task.defer(refreshTargets)
 end))
 
-local targetEspToggle = addToggle(rB, "ESP Target", function(on)
+targetEspToggle = addToggle(rB, "ESP Target", function(on)
 	targetEspOn = on
 	refreshEsp()
 end)
@@ -1272,7 +1274,7 @@ refreshTargets()
 local avatarSaved = setmetatable({}, { __mode = "k" })
 local skelObjs = {}
 local skelOnlyTarget = false
-local skelFolder = Instance.new("Folder")
+skelFolder = Instance.new("Folder")
 skelFolder.Name = "ZeFeraSkeleton"
 skelFolder.Parent = camera
 
@@ -1400,11 +1402,11 @@ RunService.RenderStepped:Connect(function()
 end)
 
 addHeader(aA, "AVATAR PLAYER LAIN")
-local avatarToggle = addToggle(aA, "Sembunyikan Avatar", function(on)
+avatarToggle = addToggle(aA, "Sembunyikan Avatar", function(on)
 	avatarHideOn = on
 	if not on then restoreAvatars() end
 end)
-local skelToggle = addToggle(aA, "Skeleton ESP", function(on)
+skelToggle = addToggle(aA, "Skeleton ESP", function(on)
 	skelOn = on
 	if not on then clearAllSkeletons() end
 end)
@@ -1412,6 +1414,7 @@ addNote(aA, "Sembunyikan Avatar hanya berlaku di layarmu. Nyalakan Skeleton ESP 
 addHeader(aB, "OPSI SKELETON")
 addToggle(aB, "Skeleton Hanya Target", function(on) skelOnlyTarget = on end)
 addNote(aB, "Kalau aktif, skeleton hanya muncul untuk target yang dipilih di tab TARGET.")
+end
 
 ----------------------------------------------------------------
 -- Hitbox bulat
@@ -1506,6 +1509,7 @@ end)
 ----------------------------------------------------------------
 addHeader(oB, "PERFORMA")
 
+do
 -- Optimasi Aman: efek, kabut, bayangan. TEKSTUR & MATERIAL MAP TIDAK DIUBAH
 local gfxOn = false
 local gfxSaved = setmetatable({}, { __mode = "k" })
@@ -1591,11 +1595,13 @@ local function gfxRevert()
 	end)
 end
 
-local gfxToggle = addToggle(oB, "Optimasi Aman", function(on)
+gfxToggle = addToggle(oB, "Optimasi Aman", function(on)
 	if on then gfxApply() else gfxRevert() end
 end)
 addNote(oB, "Hapus efek, partikel, kabut & bayangan agar FPS naik. Tekstur dan material map TIDAK diubah.")
+end
 
+do
 -- Optimasi Ekstrem: tambahan, mengubah tampilan map (material polos, rumput terrain off, kualitas terendah)
 local xOn = false
 local xSaved = setmetatable({}, { __mode = "k" })
@@ -1664,15 +1670,17 @@ local function xRevert()
 	end)
 end
 
-local xToggle = addToggle(oB, "Optimasi Ekstrem", function(on)
+xToggle = addToggle(oB, "Optimasi Ekstrem", function(on)
 	if on then xApply() else xRevert() end
 end)
 addNote(oB, "PERINGATAN: mengubah tampilan map (material jadi polos, rumput terrain off, kualitas terendah). Matikan untuk mengembalikan.")
+end
 
 ----------------------------------------------------------------
 -- POPUP: tombol melayang pilihan sendiri
 ----------------------------------------------------------------
 local floats = {}
+do
 local floatSlots = {}
 
 local function makeFloat(label, onClick, obj)
@@ -1757,6 +1765,7 @@ addPopup(pB, "TP Acak", "TP", tpRandom)
 addPopup(pB, "TP Bawah Kaki", "TP\nBAWAH", tpUnder)
 addPopup(pB, "Bunuh Diri", "DEAD", doSuicide)
 addNote(pB, "Nyalakan 'Popup ...' untuk memunculkan tombol melayang. Geser untuk memindahkan. Kunci posisinya lewat 'Kunci Pop-up' di tab TELEPORT. Tombol ON/OFF berwarna hijau saat fiturnya aktif.")
+end
 
 ----------------------------------------------------------------
 -- PENGATURAN
@@ -1923,6 +1932,7 @@ end)
 ----------------------------------------------------------------
 -- Panel Config (simpan / muat manual, 3 slot) - jendela terpisah
 ----------------------------------------------------------------
+do
 local HttpService = game:GetService("HttpService")
 local CFG_DIR = "ZeFera"
 local function cfgPath(slot) return CFG_DIR .. "/slot" .. slot .. ".json" end
@@ -2132,6 +2142,8 @@ do
 			dragging = false
 		end
 	end)
+end
+
 end
 
 ----------------------------------------------------------------
