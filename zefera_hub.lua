@@ -120,7 +120,7 @@ end
 
 local vp = camera.ViewportSize
 local MENU_W = math.clamp(vp.X - 90, 380, 620)
-local MENU_H = math.clamp(vp.Y - 40, 200, 250)
+local MENU_H = math.clamp(vp.Y - 40, 220, 280)
 local FULL = UDim2.fromOffset(MENU_W, MENU_H)
 local CLOSED = UDim2.fromOffset(MENU_W, 0)
 
@@ -208,18 +208,37 @@ cfgBtn.Parent = header
 corner(cfgBtn, 8)
 cfgBtn.MouseButton1Click:Connect(function() if toggleCfg then toggleCfg() end end)
 
--- 3 kolom
-local function makeColumn(index)
+-- Navigasi tab (kategori) + halaman, tiap halaman punya 2 kolom
+local TAB_Y = 42
+local tabBar = Instance.new("Frame")
+tabBar.Position = UDim2.fromOffset(10, TAB_Y)
+tabBar.Size = UDim2.new(1, -20, 0, 28)
+tabBar.BackgroundTransparency = 1
+tabBar.Parent = main
+local tabLayout = Instance.new("UIListLayout", tabBar)
+tabLayout.FillDirection = Enum.FillDirection.Horizontal
+tabLayout.Padding = UDim.new(0, 6)
+tabLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+local pageHolder = Instance.new("Frame")
+pageHolder.Position = UDim2.fromOffset(0, TAB_Y + 34)
+pageHolder.Size = UDim2.new(1, 0, 1, -(TAB_Y + 34))
+pageHolder.BackgroundTransparency = 1
+pageHolder.ClipsDescendants = true
+pageHolder.Parent = main
+
+local scrolls = {}
+local function makeColumn(parent, index)
 	local s = Instance.new("ScrollingFrame")
-	s.Position = UDim2.new(index / 3, index == 0 and 10 or 4, 0, 44)
-	s.Size = UDim2.new(1 / 3, -14, 1, -52)
+	s.Position = UDim2.new(index / 2, index == 0 and 10 or 4, 0, 0)
+	s.Size = UDim2.new(0.5, -14, 1, -6)
 	s.BackgroundTransparency = 1
 	s.BorderSizePixel = 0
 	s.ScrollBarThickness = 4
 	s.CanvasSize = UDim2.new()
 	s.AutomaticCanvasSize = Enum.AutomaticSize.Y
 	s.ScrollingDirection = Enum.ScrollingDirection.Y
-	s.Parent = main
+	s.Parent = parent
 	local l = Instance.new("UIListLayout", s)
 	l.Padding = UDim.new(0, 7)
 	l.SortOrder = Enum.SortOrder.LayoutOrder
@@ -228,13 +247,59 @@ local function makeColumn(index)
 	p.PaddingBottom = UDim.new(0, 6)
 	p.PaddingRight = UDim.new(0, 8)
 	p.PaddingLeft = UDim.new(0, 2)
+	table.insert(scrolls, s)
 	return s
 end
 
-local colMove = makeColumn(0)
-local colVisual = makeColumn(1)
-local colSet = makeColumn(2)
-local scrolls = { colMove, colVisual, colSet }
+local tabs, pages = {}, {}
+local currentTab = 0
+local function showTab(i)
+	if currentTab == i then return end
+	currentTab = i
+	for k, p in ipairs(pages) do
+		if k == i then
+			p.Visible = true
+			p.Position = UDim2.fromOffset(18, 0)
+			TweenService:Create(p, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Position = UDim2.fromOffset(0, 0) }):Play()
+		else
+			p.Visible = false
+		end
+		tabs[k].BackgroundColor3 = (k == i) and Color3.fromRGB(50, 90, 170) or Color3.fromRGB(26, 26, 36)
+	end
+end
+
+local function addTab(label)
+	local idx = #tabs + 1
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(0.25, -5, 1, 0)
+	btn.LayoutOrder = idx
+	btn.BackgroundColor3 = Color3.fromRGB(26, 26, 36)
+	btn.Text = label
+	btn.Font = Enum.Font.GothamBold
+	btn.TextSize = 11
+	btn.TextColor3 = Color3.new(1, 1, 1)
+	btn.TextTruncate = Enum.TextTruncate.AtEnd
+	btn.Parent = tabBar
+	corner(btn, 9)
+	addStroke(btn, 1.5, idx * 0.2)
+	registerPanel(btn)
+
+	local page = Instance.new("Frame")
+	page.Size = UDim2.fromScale(1, 1)
+	page.BackgroundTransparency = 1
+	page.Visible = false
+	page.Parent = pageHolder
+
+	tabs[idx], pages[idx] = btn, page
+	btn.MouseButton1Click:Connect(function() showTab(idx) end)
+	return makeColumn(page, 0), makeColumn(page, 1)
+end
+
+local gA, gB = addTab("GERAK")
+local vA, vB = addTab("VISUAL")
+local oA, oB = addTab("OPTIMASI")
+local sA, sB = addTab("PENGATURAN")
+showTab(1)
 
 local openBtn = Instance.new("TextButton")
 openBtn.Size = UDim2.fromOffset(46, 46)
@@ -265,6 +330,22 @@ local function addHeader(parent, text)
 	l.TextSize = 11
 	l.TextColor3 = Color3.fromRGB(150, 150, 170)
 	l.TextXAlignment = Enum.TextXAlignment.Left
+	l.LayoutOrder = nextOrder()
+	l.Parent = parent
+end
+
+local function addNote(parent, text)
+	local l = Instance.new("TextLabel")
+	l.Size = UDim2.new(1, 0, 0, 0)
+	l.AutomaticSize = Enum.AutomaticSize.Y
+	l.BackgroundTransparency = 1
+	l.Text = text
+	l.Font = Enum.Font.GothamMedium
+	l.TextSize = 11
+	l.TextWrapped = true
+	l.TextColor3 = Color3.fromRGB(150, 150, 170)
+	l.TextXAlignment = Enum.TextXAlignment.Left
+	l.TextYAlignment = Enum.TextYAlignment.Top
 	l.LayoutOrder = nextOrder()
 	l.Parent = parent
 end
@@ -484,10 +565,10 @@ registerPanel(openBtn)
 ----------------------------------------------------------------
 -- KOLOM 1: GERAK
 ----------------------------------------------------------------
-addHeader(colMove, "GERAK")
+addHeader(gA, "GERAK")
 
 local flyToggle
-flyToggle = addToggle(colMove, "Fly", function(on)
+flyToggle = addToggle(gA, "Fly", function(on)
 	local _, root, hum = getChar()
 	if on then
 		if not (root and hum) then flying = false return end
@@ -510,7 +591,7 @@ flyToggle = addToggle(colMove, "Fly", function(on)
 	end
 end)
 
-local noclipToggle = addToggle(colMove, "Noclip", function(on) noclip = on end)
+local noclipToggle = addToggle(gA, "Noclip", function(on) noclip = on end)
 
 RunService.Stepped:Connect(function()
 	if not noclip then return end
@@ -528,7 +609,7 @@ local function destroyAir()
 end
 
 local airToggle
-airToggle = addToggle(colMove, "Airwalk", function(on)
+airToggle = addToggle(gA, "Airwalk", function(on)
 	airwalk = on
 	if on then
 		local _, root, hum = getChar()
@@ -561,12 +642,12 @@ RunService.Heartbeat:Connect(function(dt)
 end)
 
 local comboToggle
-comboToggle = addToggle(colMove, "NoClip+Airwalk", function(on)
+comboToggle = addToggle(gA, "NoClip+Airwalk", function(on)
 	if noclipToggle.on ~= on then noclipToggle.set(on) end
 	if airToggle.on ~= on then airToggle.set(on) end
 end)
 
-local speedToggle = addToggle(colMove, "Speed Up", function(on)
+local speedToggle = addToggle(gA, "Speed Up", function(on)
 	speedUp = on
 	local _, _, hum = getChar()
 	if on then
@@ -583,7 +664,8 @@ RunService.Heartbeat:Connect(function()
 end)
 
 local savedLight
-local darkToggle = addToggle(colMove, "Anti Gelap", function(on)
+addHeader(oA, "PENCAHAYAAN")
+local darkToggle = addToggle(oA, "Anti Gelap", function(on)
 	if on then
 		savedLight = {
 			Brightness = Lighting.Brightness,
@@ -603,6 +685,8 @@ local darkToggle = addToggle(colMove, "Anti Gelap", function(on)
 		for k, v in pairs(savedLight) do Lighting[k] = v end
 	end
 end)
+
+addNote(oA, "Terangkan area gelap (fullbright). Pengaturan cahaya asli dikembalikan saat dimatikan.")
 
 ----------------------------------------------------------------
 -- TP Sayang Nyawa (teleport ke pemain acak) + tombol pintas
@@ -653,7 +737,8 @@ local function tpRandom()
 	toast("TP ke " .. plr.DisplayName)
 end
 
-addButton(colMove, "TP Sayang Nyawa", tpRandom)
+addHeader(gB, "TELEPORT")
+addButton(gB, "TP Sayang Nyawa", tpRandom)
 
 -- Tombol pintas melayang (bisa di-drag, bisa dikunci)
 local tpLocked = false
@@ -697,9 +782,9 @@ do
 	end)
 end
 
-local tpToggle = addToggle(colMove, "Pintasan TP", function(on) tpBtn.Visible = on end)
+local tpToggle = addToggle(gB, "Pintasan TP", function(on) tpBtn.Visible = on end)
 tpToggle.set(true)
-addToggle(colMove, "Kunci TP", function(on)
+addToggle(gB, "Kunci TP", function(on)
 	tpLocked = on
 	toast(on and "Pintasan TP dikunci" or "Pintasan TP dibuka")
 end)
@@ -779,8 +864,8 @@ local function rebuildAllEsp()
 	for _, plr in ipairs(Players:GetPlayers()) do buildEsp(plr) end
 end
 
-addHeader(colVisual, "VISUAL & HITBOX")
-local espToggle = addToggle(colVisual, "ESP Nama + Jarak", function(on)
+addHeader(vA, "ESP & HITBOX")
+local espToggle = addToggle(vA, "ESP Nama + Jarak", function(on)
 	espOn = on
 	if on then rebuildAllEsp() else clearAllEsp() end
 end)
@@ -848,17 +933,18 @@ local function restoreAllHb()
 	for part, s in pairs(hbSaved) do restoreHb(part, s) end
 end
 
-local hbToggle = addToggle(colVisual, "Hitbox Bulat", function(on)
+local hbToggle = addToggle(vA, "Hitbox Bulat", function(on)
 	hbOn = on
 	if not on then restoreAllHb() end
 end)
-addToggle(colVisual, "Sembunyikan Hitbox", function(on) hbHide = on end)
-addToggle(colVisual, "Abaikan Tim", function(on) hbSkipTeam = on end)
-local tintToggle = addToggle(colVisual, "Zona Hitbox", function(on) tintOn = on end)
+addToggle(vA, "Sembunyikan Hitbox", function(on) hbHide = on end)
+addToggle(vA, "Abaikan Tim", function(on) hbSkipTeam = on end)
+addHeader(vB, "ZONA & UKURAN")
+local tintToggle = addToggle(vB, "Zona Hitbox", function(on) tintOn = on end)
 tintToggle.set(true)
-addSlider(colVisual, colVisual, "Kekuatan Zona", 10, 90, tintStrength, function(v) tintStrength = v end, "%")
-addSlider(colVisual, colVisual, "Besar Hitbox", 2, 350, hbSize, function(v) hbSize = v end, " st")
-addSlider(colVisual, colVisual, "Transparansi Hitbox", 0, 100, math.floor(hbTrans * 100), function(v) hbTrans = v / 100 end, "%")
+addSlider(vB, vB, "Kekuatan Zona", 10, 90, tintStrength, function(v) tintStrength = v end, "%")
+addSlider(vB, vB, "Besar Hitbox", 2, 350, hbSize, function(v) hbSize = v end, " st")
+addSlider(vB, vB, "Transparansi Hitbox", 0, 100, math.floor(hbTrans * 100), function(v) hbTrans = v / 100 end, "%")
 
 RunService.Heartbeat:Connect(function()
 	if not hbOn then
@@ -915,7 +1001,9 @@ end)
 ----------------------------------------------------------------
 -- KOLOM 3: PENGATURAN
 ----------------------------------------------------------------
-addHeader(colSet, "PENGATURAN")
+addHeader(oB, "PERFORMA")
+addHeader(sA, "KECEPATAN")
+addHeader(sB, "TAMPILAN MENU")
 
 -- Optimasi grafik: matikan efek, kabut, noise material, bayangan
 local gfxOn = false
@@ -1019,14 +1107,15 @@ local function gfxRevert()
 	end)
 end
 
-local gfxToggle = addToggle(colSet, "Optimasi Grafik", function(on)
+local gfxToggle = addToggle(oB, "Optimasi Grafik", function(on)
 	if on then gfxApply() else gfxRevert() end
 end)
-addSlider(colSet, colSet, "Fly Speed", 10, 300, flySpeed, function(v) flySpeed = v end, nil, 1000)
-addSlider(colSet, colSet, "Walk Speed", 16, 200, walkSpeed, function(v) walkSpeed = v end, nil, 500)
-addSlider(colSet, colSet, "Transparansi Menu", 0, 80, 0, function(v) applyMenuTransparency(v / 100) end, "%")
+addNote(oB, "Hapus efek, kabut, noise material & bayangan agar FPS naik. Matikan toggle untuk mengembalikan tampilan asli.")
+addSlider(sA, sA, "Fly Speed", 10, 300, flySpeed, function(v) flySpeed = v end, nil, 1000)
+addSlider(sA, sA, "Walk Speed", 16, 200, walkSpeed, function(v) walkSpeed = v end, nil, 500)
+addSlider(sB, sB, "Transparansi Menu", 0, 80, 0, function(v) applyMenuTransparency(v / 100) end, "%")
 local maxW = math.max(420, math.floor(camera.ViewportSize.X - 20))
-addSlider(colSet, colSet, "Lebar Menu", 360, maxW, math.min(MENU_W, maxW), function(v)
+addSlider(sB, sB, "Lebar Menu", 360, maxW, math.min(MENU_W, maxW), function(v)
 	MENU_W = v
 	FULL = UDim2.fromOffset(MENU_W, MENU_H)
 	CLOSED = UDim2.fromOffset(MENU_W, 0)
@@ -1040,7 +1129,7 @@ do
 	row.Size = UDim2.new(1, 0, 0, 34)
 	row.BackgroundTransparency = 1
 	row.LayoutOrder = nextOrder()
-	row.Parent = colSet
+	row.Parent = sA
 
 	local function mk(text, xScale, xOff, setter)
 		local b = Instance.new("TextButton")
