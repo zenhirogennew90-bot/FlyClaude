@@ -1,15 +1,30 @@
 -- ZeFera Hub v4 (LocalScript / loadstring compatible)
--- Fitur: Fly, Noclip, Airwalk, Speed Up, Anti Gelap, ESP (nama + jarak), Hitbox bulat,
---        Slider (fly/walk/hitbox/transparansi), Transparansi Menu, Menu 3 kolom landscape
+-- Fitur: Fly, Noclip, Airwalk, NoClip+Airwalk, Speed Up (bisa diketik), Anti Gelap, ESP, Hitbox bulat + Zona,
+--        TP Sayang Nyawa (pintasan bisa dikunci), Optimasi Grafik, Transparansi/Lebar Menu, Unload (DEL)
 -- Key: F = fly | N = noclip | RightShift = buka/tutup menu | Space/Shift = naik/turun
 
 local __ok, __err = xpcall(function()
 
 if not game:IsLoaded() then game.Loaded:Wait() end
 
+local conns = {}
+local function track(c) table.insert(conns, c) return c end
+
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local UIS = game:GetService("UserInputService")
+local RunService = (function()
+	local rs = game:GetService("RunService")
+	local function wrap(sig)
+		return { Connect = function(_, fn) return track(sig:Connect(fn)) end }
+	end
+	return { Heartbeat = wrap(rs.Heartbeat), RenderStepped = wrap(rs.RenderStepped), Stepped = wrap(rs.Stepped) }
+end)()
+local UIS = (function()
+	local u = game:GetService("UserInputService")
+	local function wrap(sig)
+		return { Connect = function(_, fn) return track(sig:Connect(fn)) end }
+	end
+	return { InputBegan = wrap(u.InputBegan), InputChanged = wrap(u.InputChanged), InputEnded = wrap(u.InputEnded) }
+end)()
 local TweenService = game:GetService("TweenService")
 local Lighting = game:GetService("Lighting")
 
@@ -22,6 +37,10 @@ do
 	local ok, h = pcall(function() return (not (getgenv and getgenv().ZF_PLAYERGUI)) and gethui and gethui() end)
 	if ok and typeof(h) == "Instance" then guiParent = h end
 end
+pcall(function()
+	local g = getgenv()
+	if g.ZeFeraUnload then g.ZeFeraUnload() end
+end)
 for _, p in ipairs({ playerGui, guiParent }) do
 	for _, n in ipairs({ "ZeFeraHub", "ZeFeraTint" }) do
 		local old = p:FindFirstChild(n)
@@ -39,8 +58,8 @@ local espOn = false
 local hbOn, hbHide, hbSkipTeam = false, false, false
 local hbSize, hbTrans = 12, 0.7
 local hbRgb, tintOn, tintStrength = false, true, 45
-local noclipSafe, safePart, safeY = false, nil, nil
 local isOpen = false
+local unloadHub
 local bv, bg, airPart, platY, origWalk
 
 ----------------------------------------------------------------
@@ -150,6 +169,32 @@ closeBtn.TextSize = 14
 closeBtn.TextColor3 = Color3.new(1, 1, 1)
 closeBtn.Parent = header
 corner(closeBtn, 8)
+
+local unloadBtn = Instance.new("TextButton")
+unloadBtn.Size = UDim2.fromOffset(34, 28)
+unloadBtn.Position = UDim2.new(1, -76, 0, 6)
+unloadBtn.BackgroundColor3 = Color3.fromRGB(120, 30, 45)
+unloadBtn.Text = "DEL"
+unloadBtn.Font = Enum.Font.GothamBold
+unloadBtn.TextSize = 11
+unloadBtn.TextColor3 = Color3.new(1, 1, 1)
+unloadBtn.Parent = header
+corner(unloadBtn, 8)
+do
+	local armed = false
+	unloadBtn.MouseButton1Click:Connect(function()
+		if armed then
+			if unloadHub then unloadHub() end
+			return
+		end
+		armed = true
+		unloadBtn.Text = "OK?"
+		task.delay(2, function()
+			armed = false
+			if unloadBtn.Parent then unloadBtn.Text = "DEL" end
+		end)
+	end)
+end
 
 -- 3 kolom
 local function makeColumn(index)
@@ -280,7 +325,7 @@ local function addButton(parent, text, callback)
 	return b
 end
 
-local function addSlider(parent, scrollFrame, labelText, min, max, initial, onChange, suffix)
+local function addSlider(parent, scrollFrame, labelText, min, max, initial, onChange, suffix, typeMax)
 	local value = initial
 	suffix = suffix or ""
 
@@ -337,13 +382,45 @@ local function addSlider(parent, scrollFrame, labelText, min, max, initial, onCh
 	knob.Parent = hit
 	corner(knob, 8)
 
+	local box
+	if typeMax then
+		label.Size = UDim2.new(1, -84, 0, 22)
+		box = Instance.new("TextBox")
+		box.Size = UDim2.fromOffset(56, 20)
+		box.Position = UDim2.new(1, -66, 0, 4)
+		box.BackgroundColor3 = Color3.fromRGB(14, 14, 20)
+		box.Font = Enum.Font.GothamBold
+		box.TextSize = 12
+		box.TextColor3 = Color3.new(1, 1, 1)
+		box.ClearTextOnFocus = true
+		box.Text = tostring(value)
+		box.Parent = row
+		corner(box, 6)
+	end
+
 	local function refresh()
-		local rel = (value - min) / (max - min)
+		local rel = math.clamp((value - min) / (max - min), 0, 1)
 		fill.Size = UDim2.fromScale(rel, 1)
 		knob.Position = UDim2.fromScale(rel, 0.5)
-		label.Text = labelText .. ": " .. value .. suffix
+		if box then
+			label.Text = labelText
+			box.Text = tostring(value)
+		else
+			label.Text = labelText .. ": " .. value .. suffix
+		end
 	end
 	refresh()
+
+	if box then
+		box.FocusLost:Connect(function()
+			local n = tonumber(box.Text)
+			if n then
+				value = math.clamp(math.floor(n + 0.5), min, typeMax)
+				onChange(value)
+			end
+			refresh()
+		end)
+	end
 
 	local dragging = false
 	local function setFromX(x)
@@ -412,7 +489,7 @@ end)
 local noclipToggle = addToggle(colMove, "Noclip", function(on) noclip = on end)
 
 RunService.Stepped:Connect(function()
-	if not (noclip or noclipSafe) then return end
+	if not noclip then return end
 	local char = player.Character
 	if not char then return end
 	for _, p in ipairs(char:GetDescendants()) do
@@ -420,53 +497,6 @@ RunService.Stepped:Connect(function()
 			p.CanCollide = false
 		end
 	end
-end)
-
--- Noclip Aman = noclip + airwalk satu paket (lantai tak terlihat mengikuti kakimu)
-local safeToggle
-safeToggle = addToggle(colMove, "Noclip Aman", function(on)
-	noclipSafe = on
-	if on then
-		local _, root, hum = getChar()
-		if not (root and hum) then noclipSafe = false return end
-		safePart = Instance.new("Part")
-		safePart.Name = "NoclipFloor"
-		safePart.Size = Vector3.new(7, 1, 7)
-		safePart.Anchored = true
-		safePart.CanCollide = true
-		safePart.Transparency = 1
-		safePart.CastShadow = false
-		safePart.Parent = workspace
-		local feet = (hum.RigType == Enum.HumanoidRigType.R15) and (hum.HipHeight + root.Size.Y / 2) or 3
-		safeY = root.Position.Y - feet - 0.5
-	elseif safePart then
-		safePart:Destroy()
-		safePart = nil
-	end
-end)
-
-local safeRay = RaycastParams.new()
-safeRay.FilterType = Enum.RaycastFilterType.Exclude
-safeRay.RespectCanCollide = true
-
-RunService.Heartbeat:Connect(function(dt)
-	if not (noclipSafe and safePart) then return end
-	local char, root, hum = getChar()
-	if not (root and hum) then return end
-	if up or down then
-		-- naik/turun manual (tembus lantai) pakai Space/Shift atau tombol UP/DOWN
-		if up then safeY += 25 * dt end
-		if down then safeY -= 25 * dt end
-	else
-		-- otomatis ikuti permukaan tanah di bawah kaki
-		safeRay.FilterDescendantsInstances = { char, safePart }
-		local hit = workspace:Raycast(root.Position, Vector3.new(0, -80, 0), safeRay)
-		if hit then
-			local target = hit.Position.Y - 0.5
-			safeY += (target - safeY) * math.min(1, dt * 15)
-		end
-	end
-	safePart.CFrame = CFrame.new(root.Position.X, safeY, root.Position.Z)
 end)
 
 local function destroyAir()
@@ -506,7 +536,13 @@ RunService.Heartbeat:Connect(function(dt)
 	airPart.Color = Color3.fromHSV((tick() * 0.25) % 1, 1, 1)
 end)
 
-addToggle(colMove, "Speed Up", function(on)
+local comboToggle
+comboToggle = addToggle(colMove, "NoClip+Airwalk", function(on)
+	if noclipToggle.on ~= on then noclipToggle.set(on) end
+	if airToggle.on ~= on then airToggle.set(on) end
+end)
+
+local speedToggle = addToggle(colMove, "Speed Up", function(on)
 	speedUp = on
 	local _, _, hum = getChar()
 	if on then
@@ -523,7 +559,7 @@ RunService.Heartbeat:Connect(function()
 end)
 
 local savedLight
-addToggle(colMove, "Anti Gelap", function(on)
+local darkToggle = addToggle(colMove, "Anti Gelap", function(on)
 	if on then
 		savedLight = {
 			Brightness = Lighting.Brightness,
@@ -595,7 +631,8 @@ end
 
 addButton(colMove, "TP Sayang Nyawa", tpRandom)
 
--- Tombol pintas melayang (bisa di-drag)
+-- Tombol pintas melayang (bisa di-drag, bisa dikunci)
+local tpLocked = false
 local tpBtn = Instance.new("TextButton")
 tpBtn.Name = "TPShortcut"
 tpBtn.Size = UDim2.fromOffset(54, 54)
@@ -613,7 +650,8 @@ do
 	local dragStart, startPos, moved
 	tpBtn.InputBegan:Connect(function(i)
 		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
-			dragStart, startPos, moved = i.Position, tpBtn.Position, false
+			moved = false
+			if not tpLocked then dragStart, startPos = i.Position, tpBtn.Position end
 		end
 	end)
 	UIS.InputChanged:Connect(function(i)
@@ -637,6 +675,10 @@ end
 
 local tpToggle = addToggle(colMove, "Pintasan TP", function(on) tpBtn.Visible = on end)
 tpToggle.set(true)
+addToggle(colMove, "Kunci TP", function(on)
+	tpLocked = on
+	toast(on and "Pintasan TP dikunci" or "Pintasan TP dibuka")
+end)
 
 ----------------------------------------------------------------
 -- ESP (nama + jarak)
@@ -714,23 +756,23 @@ local function rebuildAllEsp()
 end
 
 addHeader(colVisual, "VISUAL & HITBOX")
-addToggle(colVisual, "ESP Nama + Jarak", function(on)
+local espToggle = addToggle(colVisual, "ESP Nama + Jarak", function(on)
 	espOn = on
 	if on then rebuildAllEsp() else clearAllEsp() end
 end)
 
 local function hookPlayer(plr)
 	if plr == player then return end
-	plr.CharacterAdded:Connect(function()
+	track(plr.CharacterAdded:Connect(function()
 		if espOn then
 			task.wait(0.3)
 			buildEsp(plr)
 		end
-	end)
+	end))
 end
 for _, p in ipairs(Players:GetPlayers()) do hookPlayer(p) end
-Players.PlayerAdded:Connect(hookPlayer)
-Players.PlayerRemoving:Connect(clearEsp)
+track(Players.PlayerAdded:Connect(hookPlayer))
+track(Players.PlayerRemoving:Connect(clearEsp))
 
 do
 	local acc = 0
@@ -782,16 +824,15 @@ local function restoreAllHb()
 	for part, s in pairs(hbSaved) do restoreHb(part, s) end
 end
 
-addToggle(colVisual, "Hitbox Bulat", function(on)
+local hbToggle = addToggle(colVisual, "Hitbox Bulat", function(on)
 	hbOn = on
 	if not on then restoreAllHb() end
 end)
 addToggle(colVisual, "Sembunyikan Hitbox", function(on) hbHide = on end)
 addToggle(colVisual, "Abaikan Tim", function(on) hbSkipTeam = on end)
-addToggle(colVisual, "Hitbox RGB", function(on) hbRgb = on end)
-local tintToggle = addToggle(colVisual, "Warna Layar", function(on) tintOn = on end)
+local tintToggle = addToggle(colVisual, "Zona Hitbox", function(on) tintOn = on end)
 tintToggle.set(true)
-addSlider(colVisual, colVisual, "Kekuatan Warna", 10, 90, tintStrength, function(v) tintStrength = v end, "%")
+addSlider(colVisual, colVisual, "Kekuatan Zona", 10, 90, tintStrength, function(v) tintStrength = v end, "%")
 addSlider(colVisual, colVisual, "Besar Hitbox", 2, 350, hbSize, function(v) hbSize = v end, " st")
 addSlider(colVisual, colVisual, "Transparansi Hitbox", 0, 100, math.floor(hbTrans * 100), function(v) hbTrans = v / 100 end, "%")
 
@@ -851,8 +892,114 @@ end)
 -- KOLOM 3: PENGATURAN
 ----------------------------------------------------------------
 addHeader(colSet, "PENGATURAN")
-addSlider(colSet, colSet, "Fly Speed", 10, 300, flySpeed, function(v) flySpeed = v end)
-addSlider(colSet, colSet, "Walk Speed", 16, 200, walkSpeed, function(v) walkSpeed = v end)
+
+-- Optimasi grafik: matikan efek, kabut, noise material, bayangan
+local gfxOn = false
+local gfxSaved = setmetatable({}, { __mode = "k" })
+local gfxEnv, gfxTerr, gfxQuality
+local gfxConns = {}
+
+local function gfxStrip(inst)
+	local props
+	if inst:IsA("ParticleEmitter") or inst:IsA("Trail") or inst:IsA("Beam") or inst:IsA("PostEffect")
+		or inst:IsA("Clouds") or inst:IsA("Fire") or inst:IsA("Smoke") or inst:IsA("Sparkles") then
+		if inst.Enabled then
+			props = { Enabled = true }
+			inst.Enabled = false
+		end
+	elseif inst:IsA("Atmosphere") then
+		props = { Density = inst.Density, Haze = inst.Haze }
+		inst.Density = 0
+		inst.Haze = 0
+	elseif inst:IsA("BasePart") and not inst:IsA("Terrain")
+		and inst.Name ~= "HumanoidRootPart" and inst.Name ~= "AirwalkPlatform"
+		and not (inst.Parent and inst.Parent:FindFirstChildOfClass("Humanoid")) then
+		if inst.Material ~= Enum.Material.SmoothPlastic or inst.CastShadow then
+			props = { Material = inst.Material, CastShadow = inst.CastShadow }
+			inst.Material = Enum.Material.SmoothPlastic
+			inst.CastShadow = false
+		end
+	end
+	if props and not gfxSaved[inst] then gfxSaved[inst] = props end
+end
+
+local function gfxApply()
+	gfxOn = true
+	gfxEnv, gfxTerr = {}, {}
+	local lightProps = {
+		GlobalShadows = false, FogEnd = 1e6, FogStart = 1e6, ShadowSoftness = 0,
+		EnvironmentDiffuseScale = 0, EnvironmentSpecularScale = 0,
+	}
+	for k, v in pairs(lightProps) do
+		pcall(function()
+			gfxEnv[k] = Lighting[k]
+			Lighting[k] = v
+		end)
+	end
+	local terrain = workspace:FindFirstChildOfClass("Terrain")
+	if terrain then
+		local tp = { Decoration = false, WaterWaveSize = 0, WaterWaveSpeed = 0, WaterReflectance = 0 }
+		for k, v in pairs(tp) do
+			pcall(function()
+				gfxTerr[k] = terrain[k]
+				terrain[k] = v
+			end)
+		end
+	end
+	pcall(function()
+		local r = settings().Rendering
+		gfxQuality = r.QualityLevel
+		r.QualityLevel = Enum.QualityLevel.Level01
+	end)
+	for _, d in ipairs(Lighting:GetDescendants()) do pcall(gfxStrip, d) end
+	table.insert(gfxConns, workspace.DescendantAdded:Connect(function(d) pcall(gfxStrip, d) end))
+	table.insert(gfxConns, Lighting.DescendantAdded:Connect(function(d) pcall(gfxStrip, d) end))
+	task.spawn(function()
+		local n = 0
+		for _, d in ipairs(workspace:GetDescendants()) do
+			if not gfxOn then return end
+			pcall(gfxStrip, d)
+			n += 1
+			if n % 300 == 0 then task.wait() end
+		end
+	end)
+end
+
+local function gfxRevert()
+	gfxOn = false
+	for _, c in ipairs(gfxConns) do c:Disconnect() end
+	gfxConns = {}
+	if gfxEnv then
+		for k, v in pairs(gfxEnv) do pcall(function() Lighting[k] = v end) end
+		gfxEnv = nil
+	end
+	local terrain = workspace:FindFirstChildOfClass("Terrain")
+	if terrain and gfxTerr then
+		for k, v in pairs(gfxTerr) do pcall(function() terrain[k] = v end) end
+	end
+	gfxTerr = nil
+	if gfxQuality then
+		pcall(function() settings().Rendering.QualityLevel = gfxQuality end)
+		gfxQuality = nil
+	end
+	task.spawn(function()
+		local n = 0
+		for inst, props in pairs(gfxSaved) do
+			pcall(function()
+				for k, v in pairs(props) do inst[k] = v end
+			end)
+			gfxSaved[inst] = nil
+			n += 1
+			if n % 300 == 0 then task.wait() end
+		end
+	end)
+end
+
+local gfxToggle = addToggle(colSet, "Optimasi Grafik", function(on)
+	if on then gfxApply() else gfxRevert() end
+end)
+addSlider(colSet, colSet, "Fly Speed", 10, 300, flySpeed, function(v) flySpeed = v end, nil, 1000)
+addSlider(colSet, colSet, "Walk Speed", 16, 200, walkSpeed, function(v) walkSpeed = v end, nil, 500)
 addSlider(colSet, colSet, "Transparansi Menu", 0, 80, 0, function(v) applyMenuTransparency(v / 100) end, "%")
 local maxW = math.max(420, math.floor(camera.ViewportSize.X - 20))
 addSlider(colSet, colSet, "Lebar Menu", 360, maxW, math.min(MENU_W, maxW), function(v)
@@ -999,13 +1146,28 @@ end)
 ----------------------------------------------------------------
 -- Respawn
 ----------------------------------------------------------------
-player.CharacterAdded:Connect(function()
+track(player.CharacterAdded:Connect(function()
 	bv, bg = nil, nil
 	flying = false
 	if flyToggle.on then flyToggle.on = false flyToggle.set(false) end
+	if comboToggle.on then comboToggle.on = false comboToggle.set(false) end
 	if airToggle.on then airToggle.set(false) end
-	if safeToggle.on then safeToggle.set(false) end
-end)
+end))
+
+----------------------------------------------------------------
+-- Unload (tombol DEL): matikan semua fitur, kembalikan kondisi, hapus menu
+----------------------------------------------------------------
+unloadHub = function()
+	for _, t in ipairs({ comboToggle, flyToggle, noclipToggle, airToggle, speedToggle, darkToggle, espToggle, hbToggle, gfxToggle }) do
+		if t.on then pcall(t.set, false) end
+	end
+	tintTarget = 1
+	for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
+	pcall(function() tintGui:Destroy() end)
+	pcall(function() gui:Destroy() end)
+	pcall(function() getgenv().ZeFeraUnload = nil end)
+end
+pcall(function() getgenv().ZeFeraUnload = unloadHub end)
 
 setOpen(true)
 
