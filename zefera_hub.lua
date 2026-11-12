@@ -854,7 +854,7 @@ end
 addButton(gB, "Bunuh Diri", doSuicide)
 
 local savedLight
-addHeader(oA, "PENCAHAYAAN")
+addHeader(vB, "PENCAHAYAAN")
 local darkToggle = addToggle(vB, "Anti Gelap", function(on)
 	if on then
 		savedLight = {
@@ -876,7 +876,7 @@ local darkToggle = addToggle(vB, "Anti Gelap", function(on)
 	end
 end)
 
-addNote(oA, "Terangkan area gelap (fullbright). Pengaturan cahaya asli dikembalikan saat dimatikan.")
+addNote(vB, "Terangkan area gelap (fullbright). Pengaturan cahaya asli dikembalikan saat dimatikan.")
 
 ----------------------------------------------------------------
 -- TP Sayang Nyawa (teleport ke pemain acak) + tombol pintas
