@@ -855,7 +855,7 @@ addButton(gB, "Bunuh Diri", doSuicide)
 
 local savedLight
 addHeader(oA, "PENCAHAYAAN")
-local darkToggle = addToggle(oA, "Anti Gelap", function(on)
+local darkToggle = addToggle(vB, "Anti Gelap", function(on)
 	if on then
 		savedLight = {
 			Brightness = Lighting.Brightness,
