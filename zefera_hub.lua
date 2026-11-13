@@ -797,9 +797,20 @@ wallToggle = addToggle(gB, "Jalan Dinding", function(on)
 		wallS.look = camera.CFrame.LookVector
 		wallS.dx, wallS.dy, wallS.cp = 0, 0, nil
 		wallS.camType = camera.CameraType
+        local att = Instance.new("Attachment")
+		att.Parent = root
+		local vf = Instance.new("VectorForce")
+		vf.Attachment0 = att
+		vf.RelativeTo = Enum.ActuatorRelativeTo.World
+		vf.ApplyAtCenterOfMass = true
+		vf.Force = Vector3.zero
+		vf.Parent = root
+		wallS.vf, wallS.att = vf, att
 		camera.CameraType = Enum.CameraType.Scriptable
 	else
 		wallAnimStop()
+		if wallS.vf then wallS.vf:Destroy() wallS.vf = nil end
+		if wallS.att then wallS.att:Destroy() wallS.att = nil end
 		if wallS.camType then
 			camera.CameraType = (wallS.camType == Enum.CameraType.Scriptable) and Enum.CameraType.Custom or wallS.camType
 			wallS.camType = nil
@@ -847,7 +858,8 @@ RunService.RenderStepped:Connect(function(dt)
 	local char, root, hum = getChar()
 	if not (root and hum) then return end
 	if not hum.PlatformStand then hum.PlatformStand = true end
-	if camera.CameraType ~= Enum.CameraType.Scriptable then camera.CameraType = Enum.CameraType.Scriptable end
+    if wallS.vf then wallS.vf.Force = Vector3.new(0, root.AssemblyMass * workspace.Gravity, 0) end
+    if camera.CameraType ~= Enum.CameraType.Scriptable then camera.CameraType = Enum.CameraType.Scriptable end
 
 	local ex = { char }
 	if airPart then table.insert(ex, airPart) end
