@@ -78,7 +78,6 @@ gui.ResetOnSpawn = false
 gui.DisplayOrder = 999
 gui.Parent = guiParent
 
--- Overlay warna layar (saat masuk area hitbox)
 local tintGui = Instance.new("ScreenGui")
 tintGui.Name = "ZeFeraTint"
 tintGui.ResetOnSpawn = false
@@ -117,7 +116,6 @@ local function corner(parent, r)
 	return c
 end
 
--- Frame yang ikut diatur transparansinya
 local panels = {}
 local menuTrans = 0
 local function registerPanel(f)
@@ -148,7 +146,6 @@ local function toast(text)
 	end)
 end
 
--- Suara klik lucu: 3 efek bawaan Roblox dengan nada acak (pop / boing / cicit)
 local SoundService = game:GetService("SoundService")
 local clickSounds = {}
 for _, id in ipairs({
@@ -260,7 +257,6 @@ cfgBtn.Parent = header
 corner(cfgBtn, 8)
 cfgBtn.MouseButton1Click:Connect(function() if toggleCfg then toggleCfg() end end)
 
--- Navigasi tab (kategori) + halaman, tiap halaman punya 2 kolom
 local TAB_Y = 42
 local tabBar = Instance.new("ScrollingFrame")
 tabBar.Position = UDim2.fromOffset(10, TAB_Y)
@@ -805,7 +801,6 @@ local function livePlayers(list)
 	return out
 end
 
--- TP tepat di bawah kaki pemain (target terpilih, kalau kosong acak), jarak vertikal diatur slider
 local function tpUnder()
 	local _, root = getChar()
 	if not root then return end
@@ -827,7 +822,6 @@ addButton(tA, "TP Bawah Kaki", tpUnder)
 addSlider(tA, tA, "Jarak Vertikal", 1, 100, tpDepth, function(v) tpDepth = v end, " st", 500)
 addNote(tA, "TP Bawah Kaki memakai target dari tab TARGET (kalau kosong: acak). Aktifkan NoClip+Airwalk dulu supaya tidak jatuh ke bawah.")
 
--- Tombol pintas melayang (bisa di-drag, bisa dikunci)
 local tpLocked = false
 local tpBtn = Instance.new("TextButton")
 tpBtn.Name = "TPShortcut"
@@ -2064,7 +2058,6 @@ unloadHub = function()
 end
 pcall(function() getgenv().ZeFeraUnload = unloadHub end)
 
--- Suara klik untuk semua tombol (termasuk yang dibuat belakangan)
 local function hookClick(d)
 	if d:IsA("GuiButton") then d.MouseButton1Click:Connect(playClick) end
 end
