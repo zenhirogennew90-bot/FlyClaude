@@ -821,6 +821,17 @@ RunService.RenderStepped:Connect(function(dt)
 	local t2 = t1:Cross(n)
 	local dir = t1 * fwdIn + t2 * rightIn
 	local moving = dir.Magnitude > 0.05
+	local walkT, idleT = wallTracks.walk, wallTracks.idle
+	if moving then
+		if idleT and idleT.IsPlaying then idleT:Stop(0.15) end
+		if walkT then
+			if not walkT.IsPlaying then walkT:Play(0.15) end
+			walkT:AdjustSpeed(math.clamp(wallSpeed / 16, 0.5, 3))
+		end
+	else
+		if walkT and walkT.IsPlaying then walkT:Stop(0.15) end
+		if idleT and not idleT.IsPlaying then idleT:Play(0.15) end
+	end
 
 	if moving then
 		dir = dir.Unit
