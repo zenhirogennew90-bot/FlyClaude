@@ -733,31 +733,18 @@ local wallRay = RaycastParams.new()
 wallRay.FilterType = Enum.RaycastFilterType.Exclude
 wallRay.RespectCanCollide = true
 
-local wallTracks = {}
-local function wallAnimStop()
-	for _, t in pairs(wallTracks) do
-		pcall(function() t:Stop(0.1) end)
-	end
-	wallTracks = {}
-end
-local function wallAnimLoad(char, hum)
-	wallAnimStop()
-	local animate = char and char:FindFirstChild("Animate")
-	local animator = hum and hum:FindFirstChildOfClass("Animator")
-	if not (animate and animator) then return end
-	local function load(folder, name, prio)
-		local f = animate:FindFirstChild(folder)
-		local a = f and (f:FindFirstChild(name) or f:FindFirstChildWhichIsA("Animation"))
-		if not a then return nil end
-		local ok, tr = pcall(function() return animator:LoadAnimation(a) end)
-		if ok and tr then
-			tr.Priority = prio
-			tr.Looped = true
-			return tr
+local wallForce, wallGyro
+local wallSmoothN = Vector3.yAxis
+local wallCamTilt = CFrame.identity
+
+local function getCharMass(char)
+	local m = 0
+	for _, p in ipairs(char:GetDescendants()) do
+		if p:IsA("BasePart") and not p.Massless then
+			m += p:GetMass()
 		end
 	end
-	wallTracks.walk = load("walk", "WalkAnim", Enum.AnimationPriority.Movement)
-	wallTracks.idle = load("idle", "Animation1", Enum.AnimationPriority.Idle)
+	return math.max(m, 1)
 end
 
 local wallToggle
@@ -768,16 +755,31 @@ wallToggle = addToggle(gB, "Jalan Dinding", function(on)
 		if not (root and hum) then wallOn = false return end
 		if flyToggle.on then flyToggle.set(false) end
 		wallN = Vector3.yAxis
-		local lv = root.CFrame.LookVector
-		local f = Vector3.new(lv.X, 0, lv.Z)
-		wallFacing = f.Magnitude > 0.01 and f.Unit or Vector3.zAxis
-		hum.PlatformStand = true
-		wallAnimLoad(char, hum)
+		wallSmoothN = Vector3.yAxis
+		wallCamTilt = CFrame.identity
+
+		wallForce = Instance.new("BodyForce")
+		wallForce.Force = Vector3.zero
+		wallForce.Parent = root
+
+		wallGyro = Instance.new("BodyGyro")
+		wallGyro.MaxTorque = Vector3.new(4e5, 0, 4e5)
+		wallGyro.P = 2e4
+		wallGyro.D = 900
+		wallGyro.CFrame = root.CFrame
+		wallGyro.Parent = root
 	else
-		wallAnimStop()
-		if hum then hum.PlatformStand = false end
+		if wallForce then wallForce:Destroy() wallForce = nil end
+		if wallGyro then wallGyro:Destroy() wallGyro = nil end
+		wallSmoothN = Vector3.yAxis
+		wallCamTilt = CFrame.identity
+		if hum then
+			hum.PlatformStand = false
+			hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+		end
 		if root then
-			local f = Vector3.new(wallFacing.X, 0, wallFacing.Z)
+			local lv = root.CFrame.LookVector
+			local f = Vector3.new(lv.X, 0, lv.Z)
 			if f.Magnitude < 0.01 then f = Vector3.zAxis end
 			local p = root.Position + Vector3.new(0, 1.5, 0)
 			root.CFrame = CFrame.lookAt(p, p + f)
@@ -789,96 +791,68 @@ end)
 RunService.RenderStepped:Connect(function(dt)
 	if not wallOn then return end
 	local char, root, hum = getChar()
-	if not (root and hum) then return end
-	if not hum.PlatformStand then hum.PlatformStand = true end
+	if not (root and hum and wallForce and wallGyro) then return end
 
 	local ex = { char }
 	if airPart then table.insert(ex, airPart) end
 	wallRay.FilterDescendantsInstances = ex
 
 	local feet = (hum.RigType == Enum.HumanoidRigType.R15) and (hum.HipHeight + root.Size.Y / 2) or 3
-	local n = wallN
 	local pos = root.Position
+	local lookDir = root.CFrame.LookVector
 
-	-- arah input relatif kamera
-	local cf = camera.CFrame
-	local md = hum.MoveDirection
-	local fl = Vector3.new(cf.LookVector.X, 0, cf.LookVector.Z)
-	local fr = Vector3.new(cf.RightVector.X, 0, cf.RightVector.Z)
-	fl = fl.Magnitude > 0 and fl.Unit or Vector3.zero
-	fr = fr.Magnitude > 0 and fr.Unit or Vector3.zero
-	local fwdIn, rightIn = md:Dot(fl), md:Dot(fr)
+	local ahead = workspace:Raycast(pos, lookDir * 3.2, wallRay)
+	local down = workspace:Raycast(pos, -wallN * (feet + 3.5), wallRay)
+	local targetN = wallN
 
-	local look = cf.LookVector
-	local t1 = look - n * look:Dot(n)
-	if t1.Magnitude < 0.3 then
-		local u = cf.UpVector
-		t1 = u - n * u:Dot(n)
-	end
-	if t1.Magnitude < 0.01 then t1 = wallFacing - n * wallFacing:Dot(n) end
-	if t1.Magnitude < 0.01 then t1 = Vector3.xAxis - n * Vector3.xAxis:Dot(n) end
-	t1 = t1.Unit
-	local t2 = t1:Cross(n)
-	local curSpeed = (hum.WalkSpeed > 0) and hum.WalkSpeed or wallSpeed
-	local dir = t1 * fwdIn + t2 * rightIn
-	local moving = dir.Magnitude > 0.05
-	local walkT, idleT = wallTracks.walk, wallTracks.idle
-	if moving then
-		if idleT and idleT.IsPlaying then idleT:Stop(0.2) end
-		if walkT then
-			if not walkT.IsPlaying then walkT:Play(0.2) end
-			walkT:AdjustSpeed(math.clamp(curSpeed / 16, 0.6, 3))
-		end
+	if ahead and math.abs(ahead.Normal:Dot(wallN)) < 0.7 then
+		targetN = ahead.Normal
+	elseif down then
+		targetN = down.Normal
 	else
-		if walkT and walkT.IsPlaying then walkT:Stop(0.25) end
-		if idleT and not idleT.IsPlaying then idleT:Play(0.25) end
-	end
-
-	if moving then
-		dir = dir.Unit
-		local step = curSpeed * dt
-		local ahead = workspace:Raycast(pos, dir * (step + 2.2), wallRay)
-		if ahead and math.abs(ahead.Normal:Dot(n)) < 0.6 then
-			n = ahead.Normal
-			pos = ahead.Position + n * feet
+		local wrap = workspace:Raycast(pos - wallN * (feet + 1.2), -lookDir * 4.5, wallRay)
+		if wrap then
+			targetN = wrap.Normal
 		else
-			pos = pos + dir * step
-			local down = workspace:Raycast(pos, -n * (feet + 2.5), wallRay)
-			if down then
-				local nn = n:Lerp(down.Normal, 0.35)
-				n = nn.Magnitude > 0.01 and nn.Unit or down.Normal
-				pos = down.Position + n * feet
-			else
-				local wrap = workspace:Raycast(pos - n * (feet + 1.2), -dir * (step + 3), wallRay)
-				if wrap then
-					n = wrap.Normal
-					pos = wrap.Position + n * feet
-				else
-					pos = root.Position
-				end
-			end
-		end
-		local f = dir - n * dir:Dot(n)
-		if f.Magnitude > 0.01 then
-			wallFacing = wallFacing:Lerp(f.Unit, math.min(1, dt * 16)).Unit
-		end
-	else
-		local down = workspace:Raycast(pos, -n * (feet + 2.5), wallRay)
-		if down then
-			n = down.Normal
-			pos = down.Position + n * feet
+			targetN = Vector3.yAxis
 		end
 	end
 
-	local smoothN = wallN:Lerp(n, math.min(1, dt * 16))
-	wallN = smoothN.Magnitude > 0.01 and smoothN.Unit or n
-	local f = wallFacing - wallN * wallFacing:Dot(wallN)
-	if f.Magnitude < 0.01 then f = t1 - wallN * t1:Dot(wallN) end
-	f = f.Unit
-	local targetCF = CFrame.fromMatrix(pos, f:Cross(wallN), wallN, -f)
-	root.CFrame = root.CFrame:Lerp(targetCF, math.min(1, dt * 22))
-	root.AssemblyLinearVelocity = Vector3.zero
-	root.AssemblyAngularVelocity = Vector3.zero
+	local alpha = math.min(1, dt * 12)
+	local lerpedN = wallSmoothN:Lerp(targetN, alpha)
+	wallSmoothN = lerpedN.Magnitude > 0.01 and lerpedN.Unit or targetN
+	wallN = wallSmoothN
+
+	local mass = getCharMass(char)
+	local g = workspace.Gravity
+	local antiWorldGravity = Vector3.new(0, mass * g, 0)
+	local wallGravity = -wallN * (mass * g * 1.15)
+	wallForce.Force = antiWorldGravity + wallGravity
+
+	local vel = root.AssemblyLinearVelocity
+	local tangentVel = vel - wallN * vel:Dot(wallN)
+	if hum.MoveDirection.Magnitude < 0.05 and tangentVel.Magnitude < 4 then
+		local normalVel = wallN * vel:Dot(wallN)
+		root.AssemblyLinearVelocity = normalVel
+	end
+
+	local right = lookDir:Cross(wallN)
+	if right.Magnitude < 0.01 then right = root.CFrame.RightVector end
+	right = right.Unit
+	local fwd = wallN:Cross(right).Unit
+	wallGyro.CFrame = CFrame.fromMatrix(pos, right, wallN, -fwd)
+
+	local targetTilt = CFrame.fromAxisAngle(Vector3.yAxis:Cross(wallN).Magnitude > 0.01 and Vector3.yAxis:Cross(wallN).Unit or Vector3.xAxis, math.acos(math.clamp(Vector3.yAxis:Dot(wallN), -1, 1)))
+	wallCamTilt = wallCamTilt:Lerp(targetTilt, math.min(1, dt * 10))
+	if (wallN - Vector3.yAxis).Magnitude > 0.05 then
+		local camPos = camera.CFrame.Position
+		local focus = camera.Focus.Position
+		local baseLook = (focus - camPos)
+		if baseLook.Magnitude > 0.01 then
+			local tiltedUp = wallCamTilt.UpVector
+			camera.CFrame = CFrame.lookAt(camPos, focus, tiltedUp)
+		end
+	end
 end)
 
 local suicideArmed = false
@@ -2199,7 +2173,7 @@ end
 -- Respawn
 ----------------------------------------------------------------
 track(player.CharacterAdded:Connect(function()
-	bv, bg, wallBV = nil, nil, nil
+	bv, bg, wallForce, wallGyro = nil, nil, nil, nil
 	flying = false
 	if flyToggle.on then flyToggle.on = false flyToggle.set(false) end
 	if comboToggle.on then comboToggle.on = false comboToggle.set(false) end
@@ -2244,4 +2218,4 @@ if not __ok then
 			Duration = 10,
 		})
 	end)
-end
+end 
