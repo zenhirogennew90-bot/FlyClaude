@@ -733,10 +733,37 @@ local wallRay = RaycastParams.new()
 wallRay.FilterType = Enum.RaycastFilterType.Exclude
 wallRay.RespectCanCollide = true
 
+local wallTracks = {}
+local function wallAnimStop()
+	for _, t in pairs(wallTracks) do
+		pcall(function() t:Stop(0.1) end)
+	end
+	wallTracks = {}
+end
+local function wallAnimLoad(char, hum)
+	wallAnimStop()
+	local animate = char and char:FindFirstChild("Animate")
+	local animator = hum and hum:FindFirstChildOfClass("Animator")
+	if not (animate and animator) then return end
+	local function load(folder, name, prio)
+		local f = animate:FindFirstChild(folder)
+		local a = f and (f:FindFirstChild(name) or f:FindFirstChildWhichIsA("Animation"))
+		if not a then return nil end
+		local ok, tr = pcall(function() return animator:LoadAnimation(a) end)
+		if ok and tr then
+			tr.Priority = prio
+			tr.Looped = true
+			return tr
+		end
+	end
+	wallTracks.walk = load("walk", "WalkAnim", Enum.AnimationPriority.Movement)
+	wallTracks.idle = load("idle", "Animation1", Enum.AnimationPriority.Idle)
+end
+
 local wallToggle
 wallToggle = addToggle(gB, "Jalan Dinding", function(on)
 	wallOn = on
-	local _, root, hum = getChar()
+	local char, root, hum = getChar()
 	if on then
 		if not (root and hum) then wallOn = false return end
 		if flyToggle.on then flyToggle.set(false) end
@@ -745,7 +772,9 @@ wallToggle = addToggle(gB, "Jalan Dinding", function(on)
 		local f = Vector3.new(lv.X, 0, lv.Z)
 		wallFacing = f.Magnitude > 0.01 and f.Unit or Vector3.zAxis
 		hum.PlatformStand = true
+		wallAnimLoad(char, hum)
 	else
+		wallAnimStop()
 		if hum then hum.PlatformStand = false end
 		if root then
 			local f = Vector3.new(wallFacing.X, 0, wallFacing.Z)
@@ -2203,4 +2232,4 @@ if not __ok then
 			Duration = 10,
 		})
 	end)
-end
+end 
