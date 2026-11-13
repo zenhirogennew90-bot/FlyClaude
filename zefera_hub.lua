@@ -869,15 +869,6 @@ do
 	end)
 end
 
-addHeader(tB, "POP-UP TP")
-local tpToggle = addToggle(tB, "Pintasan TP", function(on) tpBtn.Visible = on end)
-tpToggle.set(true)
-addToggle(tB, "Kunci Pop-up", function(on)
-	tpLocked = on
-	toast(on and "Semua pop-up dikunci" or "Pop-up dibuka")
-end)
-addNote(tB, "Kunci Pop-up berlaku untuk tombol TP dan semua tombol pop-up lain.")
-
 ----------------------------------------------------------------
 -- ESP (nama + jarak)
 ----------------------------------------------------------------
@@ -1646,12 +1637,16 @@ addPopup(pA, "ESP Target", "TARGET", function() targetEspToggle.set(not targetEs
 addPopup(pA, "Hitbox", "HIT", function() hbToggle.set(not hbToggle.on) end, hbToggle)
 addPopup(pA, "Hide Avatar", "AVA", function() avatarToggle.set(not avatarToggle.on) end, avatarToggle)
 addPopup(pA, "Skeleton", "SKEL", function() skelToggle.set(not skelToggle.on) end, skelToggle)
-
 addHeader(pB, "TOMBOL AKSI")
 addPopup(pB, "TP Acak", "TP", tpRandom)
 addPopup(pB, "TP Bawah Kaki", "TP\nBAWAH", tpUnder)
 addPopup(pB, "Bunuh Diri", "DEAD", doSuicide)
 addNote(pB, "Nyalakan 'Popup ...' untuk memunculkan tombol melayang. Geser untuk memindahkan. Kunci posisinya lewat 'Kunci Pop-up' di tab TELEPORT. Tombol ON/OFF berwarna hijau saat fiturnya aktif.")
+addToggle(pB, "Kunci Pop-up", function(on)
+	tpLocked = on
+	toast(on and "Semua pop-up dikunci" or "Pop-up dibuka")
+end)
+ 
 end
 
 ----------------------------------------------------------------
