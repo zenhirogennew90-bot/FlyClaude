@@ -55,6 +55,7 @@ end
 local flySpeed, walkSpeed = 60, 50
 local up, down = false, false
 local flying, noclip, airwalk, speedUp = false, false, false, false
+local flyLockOn, flyLockCF = false, nil
 local espOn = false
 local hbOn, hbHide, hbSkipTeam = false, false, false
 local hbSize, hbTrans = 12, 0.7
@@ -644,6 +645,7 @@ flyToggle = addToggle(gA, "Fly", function(on)
 		bg.MaxTorque = Vector3.new(1e5, 1e5, 1e5)
 		bg.P = 9e3
 		bg.CFrame = root.CFrame
+		flyLockCF = nil
 		bg.Parent = root
 	else
 		flying = false
@@ -652,7 +654,7 @@ flyToggle = addToggle(gA, "Fly", function(on)
 		if hum then hum.PlatformStand = false end
 	end
 end)
-
+addToggle(gA, "Fly Bebas Lihat", function(on) flyLockOn = on end)
 local noclipToggle = addToggle(gA, "Noclip", function(on) noclip = on end)
 
 RunService.Stepped:Connect(function()
@@ -1837,7 +1839,13 @@ RunService.RenderStepped:Connect(function()
 	if down then dir -= Vector3.yAxis end
 
 	bv.Velocity = dir * flySpeed
-	bg.CFrame = cf
+	if flyLockOn then
+		flyLockCF = flyLockCF or root.CFrame.Rotation
+		bg.CFrame = flyLockCF
+	else
+		flyLockCF = nil
+		bg.CFrame = cf
+	end
 end)
 
 ----------------------------------------------------------------
