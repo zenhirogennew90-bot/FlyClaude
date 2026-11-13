@@ -1,5 +1,5 @@
--- ZeFera Hub v4 (LocalScript / loadstring compatible) - Tanpa Jalan Dinding
--- Fitur: Fly, Noclip, Airwalk, NoClip+Airwalk, Speed Up, Bunuh Diri, TP (acak / bawah kaki),
+-- ZeFera Hub v4 (LocalScript / loadstring compatible)
+-- Fitur: Fly, Noclip, Airwalk, NoClip+Airwalk, Speed Up, Jalan Dinding, Bunuh Diri, TP (acak / bawah kaki),
 --        ESP + Target (maks 3), Hitbox + Zona, Sembunyikan Avatar + Skeleton ESP, Optimasi Aman/Ekstrem,
 --        Popup pilihan sendiri, Suara klik, Config manual (CFG), Unload (DEL)
 -- Key: F = fly | N = noclip | RightShift = buka/tutup menu | Space/Shift = naik/turun
@@ -78,6 +78,7 @@ gui.ResetOnSpawn = false
 gui.DisplayOrder = 999
 gui.Parent = guiParent
 
+-- Overlay warna layar (saat masuk area hitbox)
 local tintGui = Instance.new("ScreenGui")
 tintGui.Name = "ZeFeraTint"
 tintGui.ResetOnSpawn = false
@@ -116,6 +117,7 @@ local function corner(parent, r)
 	return c
 end
 
+-- Frame yang ikut diatur transparansinya
 local panels = {}
 local menuTrans = 0
 local function registerPanel(f)
@@ -146,6 +148,7 @@ local function toast(text)
 	end)
 end
 
+-- Suara klik lucu: 3 efek bawaan Roblox dengan nada acak (pop / boing / cicit)
 local SoundService = game:GetService("SoundService")
 local clickSounds = {}
 for _, id in ipairs({
@@ -257,6 +260,7 @@ cfgBtn.Parent = header
 corner(cfgBtn, 8)
 cfgBtn.MouseButton1Click:Connect(function() if toggleCfg then toggleCfg() end end)
 
+-- Navigasi tab (kategori) + halaman, tiap halaman punya 2 kolom
 local TAB_Y = 42
 local tabBar = Instance.new("ScrollingFrame")
 tabBar.Position = UDim2.fromOffset(10, TAB_Y)
@@ -801,6 +805,7 @@ local function livePlayers(list)
 	return out
 end
 
+-- TP tepat di bawah kaki pemain (target terpilih, kalau kosong acak), jarak vertikal diatur slider
 local function tpUnder()
 	local _, root = getChar()
 	if not root then return end
@@ -822,6 +827,7 @@ addButton(tA, "TP Bawah Kaki", tpUnder)
 addSlider(tA, tA, "Jarak Vertikal", 1, 100, tpDepth, function(v) tpDepth = v end, " st", 500)
 addNote(tA, "TP Bawah Kaki memakai target dari tab TARGET (kalau kosong: acak). Aktifkan NoClip+Airwalk dulu supaya tidak jatuh ke bawah.")
 
+-- Tombol pintas melayang (bisa di-drag, bisa dikunci)
 local tpLocked = false
 local tpBtn = Instance.new("TextButton")
 tpBtn.Name = "TPShortcut"
@@ -1392,6 +1398,7 @@ end)
 addHeader(oB, "PERFORMA")
 
 do
+-- Optimasi Aman: efek, kabut, bayangan. TEKSTUR & MATERIAL MAP TIDAK DIUBAH
 local gfxOn = false
 local gfxSaved = setmetatable({}, { __mode = "k" })
 local gfxEnv, gfxTerr
@@ -1483,6 +1490,7 @@ addNote(oB, "Hapus efek, partikel, kabut & bayangan agar FPS naik. Tekstur dan m
 end
 
 do
+-- Optimasi Ekstrem: tambahan, mengubah tampilan map (material polos, rumput terrain off, kualitas terendah)
 local xOn = false
 local xSaved = setmetatable({}, { __mode = "k" })
 local xTerr, xQuality
@@ -1837,6 +1845,7 @@ local function applyCfg(data)
 		local sl = sliderReg[k]
 		if sl and type(v) == "number" then sl.set(v) end
 	end
+	-- toggle: NoClip+Airwalk dulu supaya urutannya konsisten
 	local keys = {}
 	for k, v in pairs(data.toggles or {}) do
 		if toggleReg[k] and type(v) == "boolean" then table.insert(keys, k) end
@@ -2045,7 +2054,7 @@ end))
 -- Unload (tombol DEL): matikan semua fitur, kembalikan kondisi, hapus menu
 ----------------------------------------------------------------
 unloadHub = function()
-	for _, t in ipairs({ comboToggle, flyToggle, noclipToggle, airToggle, speedToggle, darkToggle, espToggle, targetEspToggle, hbToggle, avatarToggle, skelToggle, gfxToggle, xToggle }) do
+	for _, t in ipairs({ comboToggle, flyToggle, wallToggle, noclipToggle, airToggle, speedToggle, darkToggle, espToggle, targetEspToggle, hbToggle, avatarToggle, skelToggle, gfxToggle, xToggle }) do
 		if t.on then pcall(t.set, false) end
 	end
 	tintTarget = 1
@@ -2058,6 +2067,7 @@ unloadHub = function()
 end
 pcall(function() getgenv().ZeFeraUnload = unloadHub end)
 
+-- Suara klik untuk semua tombol (termasuk yang dibuat belakangan)
 local function hookClick(d)
 	if d:IsA("GuiButton") then d.MouseButton1Click:Connect(playClick) end
 end
