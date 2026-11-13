@@ -60,7 +60,7 @@ local espOn = false
 local hbOn, hbHide, hbSkipTeam = false, false, false
 local hbSize, hbTrans = 12, 0.7
 local hbRgb, tintOn, tintStrength = false, true, 45
-local wallOn, wallN, wallFacing, wallSpeed = false, Vector3.yAxis, Vector3.zAxis, 16
+local wallOn, wallN, wallFacing, wallSpeed = false, Vector3.yAxis, Vector3.zAxis, 10
 local tpDepth = 8
 local targets, targetEspOn = {}, false
 local avatarHideOn, skelOn = false, false
@@ -735,7 +735,8 @@ wallRay.RespectCanCollide = true
 
 local wallForce, wallGyro
 local wallSmoothN = Vector3.yAxis
-local wallCamTilt = CFrame.identity
+local wallSwitchCooldown = 0
+local WALL_CAM_BIND = "ZeFeraWallCam"
 
 local function getCharMass(char)
 	local m = 0
@@ -756,7 +757,7 @@ wallToggle = addToggle(gB, "Jalan Dinding", function(on)
 		if flyToggle.on then flyToggle.set(false) end
 		wallN = Vector3.yAxis
 		wallSmoothN = Vector3.yAxis
-		wallCamTilt = CFrame.identity
+		wallSwitchCooldown = 0
 
 		wallForce = Instance.new("BodyForce")
 		wallForce.Force = Vector3.zero
@@ -768,11 +769,25 @@ wallToggle = addToggle(gB, "Jalan Dinding", function(on)
 		wallGyro.D = 900
 		wallGyro.CFrame = root.CFrame
 		wallGyro.Parent = root
+
+		-- Putar kamera tepat setelah kamera bawaan Roblox selesai dihitung
+		pcall(function() game:GetService("RunService"):UnbindFromRenderStep(WALL_CAM_BIND) end)
+		game:GetService("RunService"):BindToRenderStep(WALL_CAM_BIND, Enum.RenderPriority.Camera.Value + 1, function()
+			if not wallOn then return end
+			local axis = Vector3.yAxis:Cross(wallSmoothN)
+			local angle = math.acos(math.clamp(Vector3.yAxis:Dot(wallSmoothN), -1, 1))
+			if axis.Magnitude > 0.001 and angle > 0.01 then
+				local tiltRot = CFrame.fromAxisAngle(axis.Unit, angle)
+				local focus = camera.Focus
+				local rel = focus:ToObjectSpace(camera.CFrame)
+				camera.CFrame = CFrame.new(focus.Position) * tiltRot * rel
+			end
+		end)
 	else
+		pcall(function() game:GetService("RunService"):UnbindFromRenderStep(WALL_CAM_BIND) end)
 		if wallForce then wallForce:Destroy() wallForce = nil end
 		if wallGyro then wallGyro:Destroy() wallGyro = nil end
-		wallSmoothN = Vector3.yAxis
-		wallCamTilt = CFrame.identity
+		wallSmoothN = Vector3.yAxis		
 		if hum then
 			hum.PlatformStand = false
 			hum:ChangeState(Enum.HumanoidStateType.GettingUp)
@@ -801,24 +816,38 @@ RunService.RenderStepped:Connect(function(dt)
 	local pos = root.Position
 	local lookDir = root.CFrame.LookVector
 
-	local ahead = workspace:Raycast(pos, lookDir * 3.2, wallRay)
-	local down = workspace:Raycast(pos, -wallN * (feet + 3.5), wallRay)
+		wallSwitchCooldown = math.max(0, wallSwitchCooldown - dt)
+	local vel = root.AssemblyLinearVelocity
+	local moveDir = (vel - wallN * vel:Dot(wallN))
+	local moveDirUnit = moveDir.Magnitude > 1 and moveDir.Unit or lookDir
+
+	local ahead = workspace:Raycast(pos, moveDirUnit * 3.0, wallRay)
+	local down = workspace:Raycast(pos, -wallN * (feet + 3.2), wallRay)
 	local targetN = wallN
 
-	if ahead and math.abs(ahead.Normal:Dot(wallN)) < 0.7 then
-		targetN = ahead.Normal
+	if wallSwitchCooldown <= 0 then
+		if ahead and ahead.Normal:Dot(wallN) < 0.55 then
+			-- Naik ke dinding di depan
+			targetN = ahead.Normal
+			wallSwitchCooldown = 0.22
+		elseif down then
+			targetN = down.Normal
+		else
+			-- Lewat tepi sudut lancip: turun kembali ke permukaan sisi sebelahnya secara stabil
+			local wrapOrigin = pos + moveDirUnit * 1.2 - wallN * (feet + 1.0)
+			local wrap = workspace:Raycast(wrapOrigin, -moveDirUnit * 4.0, wallRay)
+			if wrap and wrap.Normal:Dot(wallN) < 0.85 then
+				targetN = wrap.Normal
+				wallSwitchCooldown = 0.25
+			else
+				targetN = Vector3.yAxis
+			end
+		end
 	elseif down then
 		targetN = down.Normal
-	else
-		local wrap = workspace:Raycast(pos - wallN * (feet + 1.2), -lookDir * 4.5, wallRay)
-		if wrap then
-			targetN = wrap.Normal
-		else
-			targetN = Vector3.yAxis
-		end
 	end
 
-	local alpha = math.min(1, dt * 12)
+	local alpha = math.min(1, dt * 10)
 	local lerpedN = wallSmoothN:Lerp(targetN, alpha)
 	wallSmoothN = lerpedN.Magnitude > 0.01 and lerpedN.Unit or targetN
 	wallN = wallSmoothN
@@ -828,8 +857,7 @@ RunService.RenderStepped:Connect(function(dt)
 	local antiWorldGravity = Vector3.new(0, mass * g, 0)
 	local wallGravity = -wallN * (mass * g * 1.15)
 	wallForce.Force = antiWorldGravity + wallGravity
-
-	local vel = root.AssemblyLinearVelocity
+    if not speedUp then hum.WalkSpeed = wallSpeed end
 	local tangentVel = vel - wallN * vel:Dot(wallN)
 	if hum.MoveDirection.Magnitude < 0.05 and tangentVel.Magnitude < 4 then
 		local normalVel = wallN * vel:Dot(wallN)
@@ -841,18 +869,6 @@ RunService.RenderStepped:Connect(function(dt)
 	right = right.Unit
 	local fwd = wallN:Cross(right).Unit
 	wallGyro.CFrame = CFrame.fromMatrix(pos, right, wallN, -fwd)
-
-	local targetTilt = CFrame.fromAxisAngle(Vector3.yAxis:Cross(wallN).Magnitude > 0.01 and Vector3.yAxis:Cross(wallN).Unit or Vector3.xAxis, math.acos(math.clamp(Vector3.yAxis:Dot(wallN), -1, 1)))
-	wallCamTilt = wallCamTilt:Lerp(targetTilt, math.min(1, dt * 10))
-	if (wallN - Vector3.yAxis).Magnitude > 0.05 then
-		local camPos = camera.CFrame.Position
-		local focus = camera.Focus.Position
-		local baseLook = (focus - camPos)
-		if baseLook.Magnitude > 0.01 then
-			local tiltedUp = wallCamTilt.UpVector
-			camera.CFrame = CFrame.lookAt(camPos, focus, tiltedUp)
-		end
-	end
 end)
 
 local suicideArmed = false
@@ -2218,4 +2234,4 @@ if not __ok then
 			Duration = 10,
 		})
 	end)
-end 
+end
