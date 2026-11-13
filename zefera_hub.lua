@@ -1641,7 +1641,7 @@ addHeader(pB, "TOMBOL AKSI")
 addPopup(pB, "TP Acak", "TP", tpRandom)
 addPopup(pB, "TP Bawah Kaki", "TP\nBAWAH", tpUnder)
 addPopup(pB, "Bunuh Diri", "DEAD", doSuicide)
-addNote(pB, "Nyalakan 'Popup ...' untuk memunculkan tombol melayang. Geser untuk memindahkan. Kunci posisinya lewat 'Kunci Pop-up' di tab TELEPORT. Tombol ON/OFF berwarna hijau saat fiturnya aktif.")
+addNote(pB, "Nyalakan 'Popup ...' untuk Kunci posisi Pop-up
 addToggle(pB, "Kunci Pop-up", function(on)
 	tpLocked = on
 	toast(on and "Semua pop-up dikunci" or "Pop-up dibuka")
@@ -2083,3 +2083,4 @@ if not __ok then
 		})
 	end)
 end 
+	
