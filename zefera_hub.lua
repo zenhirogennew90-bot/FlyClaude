@@ -735,8 +735,31 @@ wallRay.RespectCanCollide = true
 
 local wallForce, wallGyro
 local wallSmoothN = Vector3.yAxis
+local wallCurrentLook = Vector3.zAxis
 local wallSwitchCooldown = 0
 local WALL_CAM_BIND = "ZeFeraWallCam"
+local CAMERA_DISTANCE = 9
+local CAMERA_HEIGHT = 3
+
+local function updateWallCamera()
+	local _, root = getChar()
+	if not root then return end
+
+	local normal = wallSmoothN
+	local look = camera.CFrame.LookVector
+	local projected = look - normal * look:Dot(normal)
+
+	if projected.Magnitude > 0.01 then
+		wallCurrentLook = projected.Unit
+	end
+
+	local cameraPosition = root.Position + normal * CAMERA_HEIGHT - wallCurrentLook * CAMERA_DISTANCE
+	camera.CFrame = CFrame.lookAt(
+		cameraPosition,
+		root.Position + normal * 1.5 + wallCurrentLook * 5,
+		normal
+	)
+end
 
 local function getCharMass(char)
 	local m = 0
@@ -755,8 +778,13 @@ wallToggle = addToggle(gB, "Jalan Dinding", function(on)
 	if on then
 		if not (root and hum) then wallOn = false return end
 		if flyToggle.on then flyToggle.set(false) end
+ 	else
+		pcall(function() game:GetService("RunService"):UnbindFromRenderStep(WALL_CAM_BIND) end)
+		if wallForce then wallForce:Destroy() wallForce = nil end
+		if wallGyro then wallGyro:Destroy() wallGyro = nil end
 		wallN = Vector3.yAxis
 		wallSmoothN = Vector3.yAxis
+		wallCurrentLook = root.CFrame.LookVector
 		wallSwitchCooldown = 0
 
 		wallForce = Instance.new("BodyForce")
@@ -770,38 +798,13 @@ wallToggle = addToggle(gB, "Jalan Dinding", function(on)
 		wallGyro.CFrame = root.CFrame
 		wallGyro.Parent = root
 
-		-- Putar kamera tepat setelah kamera bawaan Roblox selesai dihitung
 		pcall(function() game:GetService("RunService"):UnbindFromRenderStep(WALL_CAM_BIND) end)
 		game:GetService("RunService"):BindToRenderStep(WALL_CAM_BIND, Enum.RenderPriority.Camera.Value + 1, function()
-			if not wallOn then return end
-			local axis = Vector3.yAxis:Cross(wallSmoothN)
-			local angle = math.acos(math.clamp(Vector3.yAxis:Dot(wallSmoothN), -1, 1))
-			if axis.Magnitude > 0.001 and angle > 0.01 then
-				local tiltRot = CFrame.fromAxisAngle(axis.Unit, angle)
-				local focus = camera.Focus
-				local rel = focus:ToObjectSpace(camera.CFrame)
-				camera.CFrame = CFrame.new(focus.Position) * tiltRot * rel
+			if wallOn then
+				updateWallCamera()
 			end
 		end)
-	else
-		pcall(function() game:GetService("RunService"):UnbindFromRenderStep(WALL_CAM_BIND) end)
-		if wallForce then wallForce:Destroy() wallForce = nil end
-		if wallGyro then wallGyro:Destroy() wallGyro = nil end
-		wallSmoothN = Vector3.yAxis		
-		if hum then
-			hum.PlatformStand = false
-			hum:ChangeState(Enum.HumanoidStateType.GettingUp)
-		end
-		if root then
-			local lv = root.CFrame.LookVector
-			local f = Vector3.new(lv.X, 0, lv.Z)
-			if f.Magnitude < 0.01 then f = Vector3.zAxis end
-			local p = root.Position + Vector3.new(0, 1.5, 0)
-			root.CFrame = CFrame.lookAt(p, p + f)
-			root.AssemblyLinearVelocity = Vector3.zero
-		end
-	end
-end)
+
 
 RunService.RenderStepped:Connect(function(dt)
 	if not wallOn then return end
