@@ -780,218 +780,6 @@ local function wallAnimLoad(char, hum)
 	wallTracks.idle = load("idle", "Animation1", Enum.AnimationPriority.Idle)
 end
 
-local wallToggle
-wallToggle = addToggle(gB, "Jalan Dinding", function(on)
-	wallOn = on
-	local char, root, hum = getChar()
-	if on then
-		if not (root and hum) then wallOn = false return end
-		if flyToggle.on then flyToggle.set(false) end
-		wallN = Vector3.yAxis
-		local lv = root.CFrame.LookVector
-		local f = Vector3.new(lv.X, 0, lv.Z)
-		wallFacing = f.Magnitude > 0.01 and f.Unit or Vector3.zAxis
-		hum.PlatformStand = true
-		wallAnimLoad(char, hum)
-		-- kamera sendiri (halus, ikut permukaan)
-		wallS.ns, wallS.up = Vector3.yAxis, Vector3.yAxis
-		wallS.look = camera.CFrame.LookVector
-		wallS.dx, wallS.dy, wallS.cp = 0, 0, nil
-		wallS.camType = camera.CameraType
-		camera.CameraType = Enum.CameraType.Scriptable
-		local att = Instance.new("Attachment")
-		att.Parent = root
-		local vf = Instance.new("VectorForce")
-		vf.Attachment0 = att
-		vf.RelativeTo = Enum.ActuatorRelativeTo.World
-		vf.ApplyAtCenterOfMass = true
-		vf.Force = Vector3.zero
-		vf.Parent = root
-		wallS.vf, wallS.att = vf, att
-	else
-		wallAnimStop()
-		if wallS.vf then wallS.vf:Destroy() wallS.vf = nil end
-		if wallS.att then wallS.att:Destroy() wallS.att = nil end
-		if wallS.camType then
-			camera.CameraType = (wallS.camType == Enum.CameraType.Scriptable) and Enum.CameraType.Custom or wallS.camType
-			wallS.camType = nil
-		end
-		if hum then
-			hum.PlatformStand = false
-			camera.CameraSubject = hum
-		end
-		if root then
-			local f = Vector3.new(wallFacing.X, 0, wallFacing.Z)
-			if f.Magnitude < 0.01 then f = Vector3.zAxis end
-			local p = root.Position + Vector3.new(0, 1.5, 0)
-			root.CFrame = CFrame.lookAt(p, p + f)
-			root.AssemblyLinearVelocity = Vector3.zero
-		end
-	end
-end)
-
--- input putar kamera: sentuh area kosong layar / tahan klik kanan mouse
-UIS.InputBegan:Connect(function(i, gp)
-	if not wallOn then return end
-	if i.UserInputType == Enum.UserInputType.Touch and not gp then
-		wallS.touches[i] = true
-	elseif i.UserInputType == Enum.UserInputType.MouseButton2 then
-		wallS.rmb = true
-	end
-end)
-UIS.InputChanged:Connect(function(i)
-	if not wallOn then return end
-	if i.UserInputType == Enum.UserInputType.Touch and wallS.touches[i] then
-		wallS.dx += i.Delta.X * WALL_SENS_TOUCH
-		wallS.dy += i.Delta.Y * WALL_SENS_TOUCH
-	elseif i.UserInputType == Enum.UserInputType.MouseMovement and wallS.rmb then
-		wallS.dx += i.Delta.X * WALL_SENS_MOUSE
-		wallS.dy += i.Delta.Y * WALL_SENS_MOUSE
-	end
-end)
-UIS.InputEnded:Connect(function(i)
-	wallS.touches[i] = nil
-	if i.UserInputType == Enum.UserInputType.MouseButton2 then wallS.rmb = false end
-end)
-
-RunService.RenderStepped:Connect(function(dt)
-	if not wallOn then return end
-	local char, root, hum = getChar()
-	if not (root and hum) then return end
-	if not hum.PlatformStand then hum.PlatformStand = true end
-	if wallS.vf then wallS.vf.Force = Vector3.new(0, root.AssemblyMass * workspace.Gravity, 0) end
-	if camera.CameraType ~= Enum.CameraType.Scriptable then camera.CameraType = Enum.CameraType.Scriptable end
-
-	local ex = { char }
-	if airPart then table.insert(ex, airPart) end
-	wallRay.FilterDescendantsInstances = ex
-
-	local feet = (hum.RigType == Enum.HumanoidRigType.R15) and (hum.HipHeight + root.Size.Y / 2) or 3
-	local S = wallS
-	local n = wallN
-	local pos = root.Position
-	local ac = 1 - math.exp(-dt * 10)
-
-	-- input gerak analog (0..1) relatif kamera
-	local fwdIn, rightIn = 0, 0
-	if wallControls then
-		local mv = wallControls:GetMoveVector()
-		fwdIn, rightIn = -mv.Z, mv.X
-	else
-		local cf = camera.CFrame
-		local md = hum.MoveDirection
-		local fl = Vector3.new(cf.LookVector.X, 0, cf.LookVector.Z)
-		local fr = Vector3.new(cf.RightVector.X, 0, cf.RightVector.Z)
-		fl = fl.Magnitude > 0 and fl.Unit or Vector3.zero
-		fr = fr.Magnitude > 0 and fr.Unit or Vector3.zero
-		fwdIn, rightIn = md:Dot(fl), md:Dot(fr)
-	end
-
-	local look = S.look
-	local t1 = look - n * look:Dot(n)
-	if t1.Magnitude < 0.15 then t1 = wallFacing - n * wallFacing:Dot(n) end
-	if t1.Magnitude < 0.01 then t1 = Vector3.xAxis - n * Vector3.xAxis:Dot(n) end
-	t1 = t1.Unit
-	local t2 = t1:Cross(n)
-	local dir = t1 * fwdIn + t2 * rightIn
-	local mag = math.min(dir.Magnitude, 1)
-	local moving = mag > 0.05
-	local spd = hum.WalkSpeed * mag
-
-	-- animasi jalan / diam bawaan karakter
-	local walkT, idleT = wallTracks.walk, wallTracks.idle
-	if moving then
-		if idleT and idleT.IsPlaying then idleT:Stop(0.15) end
-		if walkT then
-			if not walkT.IsPlaying then walkT:Play(0.15) end
-			walkT:AdjustSpeed(math.clamp(spd / 16, 0.3, 3))
-		end
-	else
-		if walkT and walkT.IsPlaying then walkT:Stop(0.15) end
-		if idleT and not idleT.IsPlaying then idleT:Play(0.15) end
-	end
-
-	if moving then
-		dir = dir.Unit
-		local step = spd * dt
-		local ahead = workspace:Raycast(pos, dir * (step + 2.2), wallRay)
-		if ahead and math.abs(ahead.Normal:Dot(n)) < 0.6 then
-			-- sudut cekung: naik ke dinding / lantai / langit-langit di depan
-			n = ahead.Normal
-			pos = pos:Lerp(ahead.Position + n * feet, ac)
-		else
-			pos = pos + dir * step
-			local down = workspace:Raycast(pos, -n * (feet + 2.5), wallRay)
-			if down then
-				local nn = n:Lerp(down.Normal, 0.25)
-				n = nn.Magnitude > 0.01 and nn.Unit or down.Normal
-				pos = pos:Lerp(down.Position + n * feet, ac)
-			else
-				-- sudut cembung: lewat tepi, cari permukaan di sisi bawah
-				local wrap = workspace:Raycast(pos - n * (feet + 1.2), -dir * (step + 3), wallRay)
-				if wrap then
-					n = wrap.Normal
-					pos = pos:Lerp(wrap.Position + n * feet, ac)
-				else
-					pos = root.Position
-				end
-			end
-		end
-		local ff = dir - n * dir:Dot(n)
-		if ff.Magnitude > 0.01 then
-			local nf = wallFacing:Lerp(ff.Unit, 1 - math.exp(-dt * 14))
-			wallFacing = nf.Magnitude > 0.01 and nf.Unit or ff.Unit
-		end
-	else
-		local down = workspace:Raycast(pos, -n * (feet + 2.5), wallRay)
-		if down then
-			n = down.Normal
-			pos = pos:Lerp(down.Position + n * feet, ac)
-		end
-	end
-
-	-- orientasi badan (halus)
-	wallN = n
-	local ns = S.ns:Lerp(n, 1 - math.exp(-dt * 12))
-	ns = ns.Magnitude > 0.01 and ns.Unit or n
-	S.ns = ns
-	local f = wallFacing - ns * wallFacing:Dot(ns)
-	if f.Magnitude < 0.01 then f = t1 - ns * t1:Dot(ns) end
-	if f.Magnitude < 0.01 then f = Vector3.xAxis - ns * Vector3.xAxis:Dot(ns) end
-	f = f.Unit
-	root.CFrame = CFrame.fromMatrix(pos, f:Cross(ns), ns, -f)
-	root.AssemblyLinearVelocity = Vector3.zero
-	root.AssemblyAngularVelocity = Vector3.zero
-
-	-- kamera halus: "atas" kamera ikut permukaan, putaran tetap terasa natural
-	local newUp = S.up:Lerp(ns, 1 - math.exp(-dt * 5))
-	newUp = newUp.Magnitude > 0.01 and newUp.Unit or ns
-	S.look = rotBetween(S.up, newUp):VectorToWorldSpace(S.look)
-	S.up = newUp
-	local dx, dy = S.dx, S.dy
-	S.dx, S.dy = 0, 0
-	if dx ~= 0 then S.look = CFrame.fromAxisAngle(S.up, -dx):VectorToWorldSpace(S.look) end
-	if dy ~= 0 then
-		local right = S.look:Cross(S.up)
-		if right.Magnitude > 0.01 then
-			local nl = CFrame.fromAxisAngle(right.Unit, -dy):VectorToWorldSpace(S.look)
-			local ang = math.acos(math.clamp(nl:Dot(S.up), -1, 1))
-			if ang > 0.4 and ang < math.pi - 0.4 then S.look = nl end
-		end
-	end
-	S.look = S.look.Unit
-
-	local focusT = pos + S.up * 1.6
-	if not S.cp then S.fp = nil end
-	S.fp = S.fp and S.fp:Lerp(focusT, 1 - math.exp(-dt * 9)) or focusT
-	local focus = S.fp
-	local want = focus - S.look * S.dist
-	local hit = workspace:Raycast(focus, want - focus, wallRay)
-	local camPos = hit and (hit.Position + hit.Normal * 0.5) or want
-	S.cp = S.cp and S.cp:Lerp(camPos, 1 - math.exp(-dt * 10)) or camPos
-	camera.CFrame = CFrame.lookAt(S.cp, focus, S.up)
-end)
-
 local suicideArmed = false
 local function doSuicide()
 	if not suicideArmed then
@@ -1135,14 +923,13 @@ do
 	end)
 end
 
-addHeader(tB, "POP-UP TP")
-local tpToggle = addToggle(tB, "Pintasan TP", function(on) tpBtn.Visible = on end)
-tpToggle.set(true)
-addToggle(tB, "Kunci Pop-up", function(on)
+addHeader(pB, "KUNCI POP-UP")
+tpBtn.Visible = false
+addToggle(pB, "Kunci Pop-up", function(on)
 	tpLocked = on
 	toast(on and "Semua pop-up dikunci" or "Pop-up dibuka")
 end)
-addNote(tB, "Kunci Pop-up berlaku untuk tombol TP dan semua tombol pop-up lain.")
+addNote(pB, "Kunci Pop-up berlaku untuk tombol TP dan semua tombol pop-up lain.")
 
 ----------------------------------------------------------------
 -- ESP (nama + jarak)
@@ -1907,7 +1694,6 @@ addPopup(pA, "Noclip", "NOCLIP", function() noclipToggle.set(not noclipToggle.on
 addPopup(pA, "Airwalk", "AIR", function() airToggle.set(not airToggle.on) end, airToggle)
 addPopup(pA, "NoClip+Airwalk", "NC+A", function() comboToggle.set(not comboToggle.on) end, comboToggle)
 addPopup(pA, "Speed Up", "SPEED", function() speedToggle.set(not speedToggle.on) end, speedToggle)
-addPopup(pA, "Jalan Dinding", "WALL", function() wallToggle.set(not wallToggle.on) end, wallToggle)
 addPopup(pA, "ESP", "ESP", function() espToggle.set(not espToggle.on) end, espToggle)
 addPopup(pA, "ESP Target", "TARGET", function() targetEspToggle.set(not targetEspToggle.on) end, targetEspToggle)
 addPopup(pA, "Hitbox", "HIT", function() hbToggle.set(not hbToggle.on) end, hbToggle)
@@ -1918,7 +1704,7 @@ addHeader(pB, "TOMBOL AKSI")
 addPopup(pB, "TP Acak", "TP", tpRandom)
 addPopup(pB, "TP Bawah Kaki", "TP\nBAWAH", tpUnder)
 addPopup(pB, "Bunuh Diri", "DEAD", doSuicide)
-addNote(pB, "Nyalakan 'Popup ...' untuk memunculkan tombol melayang. Geser untuk memindahkan. Kunci posisinya lewat 'Kunci Pop-up' di tab TELEPORT. Tombol ON/OFF berwarna hijau saat fiturnya aktif.")
+addNote(pB, "Nyalakan 'Popup ...' untuk memunculkan tombol melayang. Geser untuk memindahkan. Kunci posisinya lewat 'Kunci Pop-up' di tab POPUP. Tombol ON/OFF berwarna hijau saat fiturnya aktif.")
 end
 
 ----------------------------------------------------------------
@@ -2315,14 +2101,14 @@ track(player.CharacterAdded:Connect(function()
 	if flyToggle.on then flyToggle.on = false flyToggle.set(false) end
 	if comboToggle.on then comboToggle.on = false comboToggle.set(false) end
 	if airToggle.on then airToggle.set(false) end
-	if wallToggle.on then wallToggle.on = false wallToggle.set(false) end
+
 end))
 
 ----------------------------------------------------------------
 -- Unload (tombol DEL): matikan semua fitur, kembalikan kondisi, hapus menu
 ----------------------------------------------------------------
 unloadHub = function()
-	for _, t in ipairs({ comboToggle, flyToggle, wallToggle, noclipToggle, airToggle, speedToggle, darkToggle, espToggle, targetEspToggle, hbToggle, avatarToggle, skelToggle, gfxToggle, xToggle }) do
+	for _, t in ipairs({ comboToggle, flyToggle, noclipToggle, airToggle, speedToggle, darkToggle, espToggle, targetEspToggle, hbToggle, avatarToggle, skelToggle, gfxToggle, xToggle }) do
 		if t.on then pcall(t.set, false) end
 	end
 	tintTarget = 1
