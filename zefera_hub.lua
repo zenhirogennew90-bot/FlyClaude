@@ -1349,7 +1349,7 @@ skelToggle = addToggle(aA, "Skeleton ESP", function(on)
 	skelOn = on
 	if not on then clearAllSkeletons() end
 end)
-(aA, "Sembunyikan Avatar hanya berlaku di layarmu. Nyalakan Skeleton ESP bersamaan agar posisi pemain lain tetap terlihat sebagai rangka.")
+addNote(aA, "Sembunyikan Avatar hanya berlaku di layarmu. Nyalakan Skeleton ESP bersamaan agar posisi pemain lain tetap terlihat sebagai rangka.")
 addHeader(aB, "OPSI SKELETON")
 addToggle(aB, "Skeleton Hanya Target", function(on) skelOnlyTarget = on end)
 addNote(aB, "Kalau aktif, skeleton hanya muncul untuk target yang dipilih di tab TARGET.")
