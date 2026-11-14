@@ -1349,7 +1349,7 @@ skelToggle = addToggle(aA, "Skeleton ESP", function(on)
 	skelOn = on
 	if not on then clearAllSkeletons() end
 end)
-addNote(aA, "Sembunyikan Avatar hanya berlaku di layarmu. Nyalakan Skeleton ESP bersamaan agar posisi pemain lain tetap terlihat sebagai rangka.")
+(aA, "Sembunyikan Avatar hanya berlaku di layarmu. Nyalakan Skeleton ESP bersamaan agar posisi pemain lain tetap terlihat sebagai rangka.")
 addHeader(aB, "OPSI SKELETON")
 addToggle(aB, "Skeleton Hanya Target", function(on) skelOnlyTarget = on end)
 addNote(aB, "Kalau aktif, skeleton hanya muncul untuk target yang dipilih di tab TARGET.")
@@ -3071,7 +3071,6 @@ addToggle(pB, "Kunci Pop-up", function(on)
 	tpLocked = on
 	toast(on and "Semua pop-up dikunci" or "Pop-up dibuka")
 end)
-addNote(pB, "Kunci Pop-up berlaku untuk tombol TP dan semua tombol pop-up lain.")
 
 ----------------------------------------------------------------
 -- ESP (nama + jarak)
